@@ -225,7 +225,6 @@ static Token read_char_lit(Lexer* lex) {
     }
 }
 
-
 static Token read_string_lit(Lexer* lex) {
     for(;;) {
         char c0 = current(lex);
