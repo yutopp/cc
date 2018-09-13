@@ -30,10 +30,10 @@ typedef enum {
     TOK_KIND_INT_LIT,
     TOK_KIND_CHAR_LIT,
     TOK_KIND_STRING_LIT,
-} Kind;
+} TokenKind;
 
 typedef struct {
-    Kind kind;
+    TokenKind kind;
 
     char const* buf_ref;
     size_t pos_begin;
