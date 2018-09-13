@@ -1,6 +1,8 @@
 #ifndef CC_TOKEN_H
 #define CC_TOKEN_H
 
+#include <stdio.h>
+
 typedef enum {
     TOK_KIND_EOF,
     TOK_KIND_SHARP,
@@ -32,6 +34,8 @@ typedef enum {
 
 typedef struct {
     Kind kind;
+
+    char const* buf_ref;
     size_t pos_begin;
     size_t pos_end;
 } Token;
