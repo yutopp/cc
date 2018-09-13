@@ -16,9 +16,10 @@ static void skip(Lexer* lex) {
     lex->current_pos++;
 }
 
-static Token make_token(Lexer* lex, Kind kind) {
+static Token make_token(Lexer* lex, TokenKind kind) {
     Token tok = {
         .kind = kind,
+        .buf_ref = lex->buffer,
         .pos_begin = lex->begin_pos,
         .pos_end = lex->current_pos,
     };
