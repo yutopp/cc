@@ -7,6 +7,7 @@ struct vector_t;
 typedef struct vector_t Vector;
 
 Vector* vector_new(size_t elem_size);
+Vector* vector_new_with_cap(size_t elem_size, size_t cap);
 void vector_drop(Vector *vector);
 
 void* vector_append(Vector *vector);

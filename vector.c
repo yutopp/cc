@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include "vector.h"
 
 struct vector_t {
@@ -25,6 +26,14 @@ Vector* vector_new(size_t elem_size) {
     return v;
 }
 
+Vector* vector_new_with_cap(size_t elem_size, size_t cap) {
+    Vector* v = vector_new(elem_size);
+    bool res = extend(v, cap);
+    assert(res);
+
+    return v;
+}
+
 void vector_drop(Vector *v) {
     if (!v) {
         return;
@@ -39,7 +48,7 @@ void vector_drop(Vector *v) {
 
 void* vector_append(Vector *v) {
     if (v->len == v->cap) {
-        size_t ext_size = v->cap == 0 ? 24 : v->cap * 2;
+        size_t ext_size = v->cap == 0 ? 24 : v->cap * 2; //
         if (!extend(v, ext_size)) {
             return 0;
         }
