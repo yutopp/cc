@@ -4,6 +4,7 @@
 #include "token.h"
 #include "vector.h"
 #include "arena.h"
+#include "node.h"
 
 struct parser_t;
 typedef struct parser_t Parser;
@@ -12,16 +13,39 @@ enum ParserResult {
     PARSER_OK,
     PARSER_ERROR,
 };
-typedef size_t NodeId;
+
+typedef enum {
+    PARSER_ERROR_KIND_EOF,
+    PARSER_ERROR_KIND_UNEXPECTED,
+    PARSER_ERROR_KIND_MORE1,
+} ParserErrorKind;
+
+typedef union {
+    struct {
+        Token* token;
+    } unexpected;
+} ParserErrorValue;
+
+typedef struct {
+    ParserErrorKind kind;
+    ParserErrorValue value;
+} ParseError;
+
 typedef struct parser_result_t {
     enum ParserResult result;
-    NodeId id;
-    const char* message;
+    ParseError error;
+    union {
+        Node* node;
+        Vector* nodes; // Vector<Node*>
+        Token* token;
+    } value;
 } ParserResult;
 
 Parser* parser_new(Vector* tokens, Arena* arena);
 void parser_drop(Parser *parser);
 
 ParserResult parser_parse();
+
+void parser_fprint_error(FILE *fp, ParseError *err);
 
 #endif /* CC_PARSER_H */
