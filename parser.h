@@ -3,7 +3,7 @@
 
 #include "token.h"
 #include "vector.h"
-#include "arena.h"
+#include "node_arena.h"
 #include "node.h"
 
 struct parser_t;
@@ -41,7 +41,7 @@ typedef struct parser_result_t {
     } value;
 } ParserResult;
 
-Parser* parser_new(Vector* tokens, Arena* arena);
+Parser* parser_new(Vector* tokens, NodeArena* arena);
 void parser_drop(Parser *parser);
 
 ParserResult parser_parse();

@@ -3,6 +3,7 @@
 
 #include "vector.h"
 #include "token.h"
+#include "arena.h"
 
 struct node_t;
 
@@ -40,7 +41,7 @@ typedef struct node_t {
     NodeValue value;
 } Node;
 
-void node_drop(Node* node);
+void node_destruct(Node* node);
 void node_fprint(FILE *fp, Node* node);
 
 #endif /* CC_PARSER_H */

@@ -37,13 +37,13 @@ static void rewind_state(Parser *parser, state_t state);
 
 struct parser_t {
     Vector* tokens;
-    Arena* arena;
+    NodeArena* arena;
 
     size_t position;
     Vector* position_stack;
 };
 
-Parser* parser_new(Vector* tokens, Arena* arena) {
+Parser* parser_new(Vector* tokens, NodeArena* arena) {
     Parser* p = (Parser*)malloc(sizeof(Parser));
     if (!p) {
         return 0;
@@ -119,7 +119,7 @@ ParserResult parse_function_definition(Parser *parser) {
     res = parse_compound_stmt(parser); ErrProp;
     Node* block = res.value.node;
 
-    Node* node = arena_malloc(parser->arena);
+    Node* node = node_arena_malloc(parser->arena);
     node->kind = NODE_FUNC_DEF;
     node->value.func_def.decl_spec = decl_spec;
     node->value.func_def.decl = decl;
@@ -143,7 +143,7 @@ ParserResult parse_compound_stmt(Parser *parser) {
     res = assume_token(parser, TOK_KIND_RBLOCK); ErrProp;
     forward_token(parser);
 
-    Node* node = arena_malloc(parser->arena);
+    Node* node = node_arena_malloc(parser->arena);
     node->kind = NODE_STMT_COMPOUND;
     node->value.stmt_compound.stmts = nodes;
 
@@ -168,7 +168,7 @@ ParserResult parse_jump_stmt(Parser *parser) {
         res = assume_token(parser, TOK_KIND_SEMICOLON); ErrProp;
         forward_token(parser);
 
-        Node* node = arena_malloc(parser->arena);
+        Node* node = node_arena_malloc(parser->arena);
         node->kind = NODE_STMT_JUMP;
         node->value.stmt_jump.kind = t->kind;
         node->value.stmt_jump.expr = expr;
@@ -203,7 +203,7 @@ ParserResult parse_lit(Parser *parser) {
     switch (t->kind) {
     case TOK_KIND_INT_LIT:
     {
-        Node* node = arena_malloc(parser->arena);
+        Node* node = node_arena_malloc(parser->arena);
         node->kind = NODE_LIT_INT;
         node->value.lit_int.v = 0; // TODO: fix
 
@@ -233,7 +233,7 @@ ParserResult parse_id(Parser *parser) {
     switch (t->kind) {
     case TOK_KIND_ID:
     {
-        Node* node = arena_malloc(parser->arena);
+        Node* node = node_arena_malloc(parser->arena);
         node->kind = NODE_ID;
         node->value.id.tok = t;
 

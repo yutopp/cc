@@ -3,7 +3,7 @@
 static void fprint_impl(FILE *fp, Node* node, int indent);
 static void fprint_indent(FILE *fp, int indent);
 
-void node_drop(Node* node) {
+void node_destruct(Node* node) {
     switch(node->kind) {
     case NODE_STMT_COMPOUND:
         vector_drop(node->value.stmt_compound.stmts);
