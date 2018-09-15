@@ -31,8 +31,6 @@ void lexer_delete(Lexer *lex) {
     free(lex);
 }
 
-
-
 Token lexer_read(Lexer* lex) {
     for(;;) {
         lex->begin_pos = lex->current_pos;
