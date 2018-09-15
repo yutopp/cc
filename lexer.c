@@ -1,30 +1,22 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "lexer.h"
+
+static Token read_id(Lexer* lex);
+static Token read_number_lit(Lexer* lex);
+static Token read_char_lit(Lexer* lex);
+static Token read_string_lit(Lexer* lex);
+
+static Token make_token(Lexer* lex, TokenKind kind);
+static char current(Lexer* lex);
+static void skip(Lexer* lex);
 
 struct lexer_t {
     const char *buffer;
     size_t current_pos;
     size_t begin_pos;
 };
-
-static char current(Lexer* lex) {
-    return lex->buffer[lex->current_pos];
-}
-
-static void skip(Lexer* lex) {
-    lex->current_pos++;
-}
-
-static Token make_token(Lexer* lex, TokenKind kind) {
-    Token tok = {
-        .kind = kind,
-        .buf_ref = lex->buffer,
-        .pos_begin = lex->begin_pos,
-        .pos_end = lex->current_pos,
-    };
-    return tok;
-}
 
 Lexer* lexer_new(const char *buffer, const char* filepath) {
     Lexer* lex = (Lexer*)malloc(sizeof(Lexer));
@@ -39,10 +31,7 @@ void lexer_delete(Lexer *lex) {
     free(lex);
 }
 
-static Token read_id(Lexer* lex);
-static Token read_number_lit(Lexer* lex);
-static Token read_char_lit(Lexer* lex);
-static Token read_string_lit(Lexer* lex);
+
 
 Token lexer_read(Lexer* lex) {
     for(;;) {
@@ -160,28 +149,6 @@ Token lexer_read(Lexer* lex) {
     // unreachable
 }
 
-void print_token(FILE *fp, Token *tok) {
-    switch(tok->kind) {
-    case TOK_KIND_SHARP:
-        fprintf(fp, "#");
-        break;
-    case TOK_KIND_LT:
-        fprintf(fp, "<");
-        break;
-    case TOK_KIND_GT:
-        fprintf(fp, ">");
-        break;
-    case TOK_KIND_DOT:
-        fprintf(fp, ".");
-        break;
-    case TOK_KIND_ID:
-        fprintf(fp, "ID");
-        break;
-    }
-
-    fprintf(fp, " (%ld, %ld)", tok->pos_begin, tok->pos_end);
-}
-
 static Token read_id(Lexer* lex) {
     for(;;) {
         char c0 = current(lex);
@@ -191,7 +158,12 @@ static Token read_id(Lexer* lex) {
             continue;
         }
 
-        return make_token(lex, TOK_KIND_ID);
+        Token tok = make_token(lex, TOK_KIND_ID);
+        char const* buf = tok.buf_ref + tok.pos_begin;
+        if (strncmp("return", buf, tok.pos_end - tok.pos_begin) == 0) {
+            tok.kind = TOK_KIND_RETURN;
+        }
+        return tok;
     }
 }
 
@@ -242,4 +214,22 @@ static Token read_string_lit(Lexer* lex) {
             continue;
         }
     }
+}
+
+Token make_token(Lexer* lex, TokenKind kind) {
+    Token tok = {
+        .kind = kind,
+        .buf_ref = lex->buffer,
+        .pos_begin = lex->begin_pos,
+        .pos_end = lex->current_pos,
+    };
+    return tok;
+}
+
+char current(Lexer* lex) {
+    return lex->buffer[lex->current_pos];
+}
+
+void skip(Lexer* lex) {
+    lex->current_pos++;
 }
