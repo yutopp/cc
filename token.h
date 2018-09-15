@@ -27,6 +27,7 @@ typedef enum {
     TOK_KIND_LOGICAL_AND,
     TOK_KIND_LOGICAL_OR,
     TOK_KIND_ID,
+    TOK_KIND_RETURN,
     TOK_KIND_INT_LIT,
     TOK_KIND_CHAR_LIT,
     TOK_KIND_STRING_LIT,
@@ -41,5 +42,6 @@ typedef struct {
 } Token;
 
 void token_fprint(FILE *fp, Token *tok);
+void token_fprint_buf(FILE *fp, Token *tok);
 
 #endif /*CC_TOKEN_H*/
