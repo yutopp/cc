@@ -4,13 +4,8 @@
 #include "vector.h"
 #include "token.h"
 
-#define Enter(parser)                           \
-    ParserResult res;                           \
-    Parser* _parser = parser;                   \
-    size_t _parser_position = parser->position;
-
 #define ErrRet                                  \
-    rewind_state(_parser, _parser_position);    \
+    rewind_state(parser, _parser_state);        \
     return res;                                 \
 
 #define ErrProp                                 \
@@ -22,6 +17,8 @@ static ParserResult parse_function_definition(Parser *parser);
 static ParserResult parse_compound_stmt(Parser *parser);
 static ParserResult parse_jump_stmt(Parser *parser);
 static ParserResult parse_expr(Parser *parser);
+static ParserResult parse_expr_additive(Parser *parser);
+static ParserResult parse_expr_primary(Parser *parser);
 static ParserResult parse_lit(Parser *parser);
 static ParserResult parse_id(Parser *parser);
 
@@ -66,7 +63,8 @@ void parser_drop(Parser *parser) {
 }
 
 ParserResult parser_parse(Parser *parser) {
-    Enter(parser);
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
 
     res = parse_transition_unit(parser); ErrProp;
 
@@ -84,21 +82,25 @@ void parser_fprint_error(FILE *fp, ParseError *err) {
     case PARSER_ERROR_KIND_UNEXPECTED:
         fprintf(fp, "Unexpected token: ");
         token_fprint(fp, err->value.unexpected.token);
+        break;
+
+    case PARSER_ERROR_KIND_MORE1:
+        fprintf(fp, "Eexpected more than 0 tokens");
+        break;
     }
 }
 
 ParserResult parse_transition_unit(Parser *parser) {
-    Enter(parser);
     return parse_external_declaration(parser);
 }
 
 ParserResult parse_external_declaration(Parser *parser) {
-    Enter(parser);
     return parse_function_definition(parser);
 }
 
 ParserResult parse_function_definition(Parser *parser) {
-    Enter(parser);
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
 
     res = parse_id(parser); ErrProp; // TODO: fix
     Node* decl_spec = res.value.node;
@@ -132,7 +134,8 @@ ParserResult parse_function_definition(Parser *parser) {
 }
 
 ParserResult parse_compound_stmt(Parser *parser) {
-    Enter(parser);
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
 
     res = assume_token(parser, TOK_KIND_LBLOCK); ErrProp;
     forward_token(parser);
@@ -154,7 +157,8 @@ ParserResult parse_compound_stmt(Parser *parser) {
 }
 
 ParserResult parse_jump_stmt(Parser *parser) {
-    Enter(parser);
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
 
     res = current_token(parser); ErrProp;
     forward_token(parser);
@@ -183,18 +187,70 @@ ParserResult parse_jump_stmt(Parser *parser) {
         res.error.kind = PARSER_ERROR_KIND_UNEXPECTED;
         res.error.value.unexpected.token = t;
 
-        rewind_state(parser, _parser_position);
+        rewind_state(parser, _parser_state);
         return res;
     }
 }
 
 ParserResult parse_expr(Parser *parser) {
-    Enter(parser);
+    return parse_expr_additive(parser);
+}
+
+ParserResult parse_expr_additive(Parser *parser) {
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
+
+    res = parse_expr_primary(parser); ErrProp;
+    node_fprint(stdout, res.value.node);
+
+    for (;;) {
+        ParserResult res0 = current_token(parser);
+        if (res0.result == PARSER_ERROR) {
+            rewind_state(parser, _parser_state);
+            goto escape;
+        }
+        Token* op = res0.value.token;
+        token_fprint(stdout, op);
+
+        switch (op->kind) {
+        case TOK_KIND_PLUS:
+            break;
+        case TOK_KIND_MINUS:
+            break;
+        default:
+            rewind_state(parser, _parser_state);
+            goto escape;
+        }
+        forward_token(parser);
+
+        res0 = parse_expr_primary(parser);
+        if (res0.result == PARSER_ERROR) {
+            rewind_state(parser, _parser_state);
+            goto escape;
+        }
+
+        Node* node = node_arena_malloc(parser->arena);
+        node->kind = NODE_EXPR_BIN;
+        node->value.expr_bin.op = op;
+        node->value.expr_bin.lhs = res.value.node;
+        node->value.expr_bin.rhs = res0.value.node;
+
+        res.value.node = node;
+
+        _parser_state = save_state(parser); // Forward state
+    }
+
+escape:
+    return res;
+}
+
+ParserResult parse_expr_primary(Parser *parser) {
     return parse_lit(parser);
 }
 
 ParserResult parse_lit(Parser *parser) {
-    Enter(parser);
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
 
     res = current_token(parser); ErrProp;
     forward_token(parser);
@@ -203,9 +259,13 @@ ParserResult parse_lit(Parser *parser) {
     switch (t->kind) {
     case TOK_KIND_INT_LIT:
     {
+        char* const tok_buf = token_to_string(t);
+        long int n = strtol(tok_buf, NULL, 10); // TODO: fix type
+        free(tok_buf);
+
         Node* node = node_arena_malloc(parser->arena);
         node->kind = NODE_LIT_INT;
-        node->value.lit_int.v = 0; // TODO: fix
+        node->value.lit_int.v = n;
 
         res.result = PARSER_OK;
         res.value.node = node;
@@ -218,13 +278,14 @@ ParserResult parse_lit(Parser *parser) {
         res.error.kind = PARSER_ERROR_KIND_UNEXPECTED;
         res.error.value.unexpected.token = t;
 
-        rewind_state(parser, _parser_position);
+        rewind_state(parser, _parser_state);
         return res;
     }
 }
 
 ParserResult parse_id(Parser *parser) {
-    Enter(parser);
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
 
     res = current_token(parser); ErrProp;
     forward_token(parser);
@@ -248,13 +309,15 @@ ParserResult parse_id(Parser *parser) {
         res.error.kind = PARSER_ERROR_KIND_UNEXPECTED;
         res.error.value.unexpected.token = t;
 
-        rewind_state(parser, _parser_position);
+        rewind_state(parser, _parser_state);
         return res;
     }
 }
 
 ParserResult combinator_more1(Parser *parser, ParserResult (*f)(Parser *parser)) {
-    Enter(parser);
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
+
     Vector* elems = vector_new(sizeof(Node*));
 
     for(;;) {
@@ -273,7 +336,7 @@ ParserResult combinator_more1(Parser *parser, ParserResult (*f)(Parser *parser))
         res.result = PARSER_ERROR;
         res.error.kind = PARSER_ERROR_KIND_MORE1;
 
-        rewind_state(_parser, _parser_position);
+        rewind_state(parser, _parser_state);
         return res;
     }
 
