@@ -1,3 +1,4 @@
+#include <assert.h>
 #include "node.h"
 
 static void fprint_impl(FILE *fp, Node* node, int indent);
@@ -49,9 +50,15 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
             break;
 
         default:
-            // TODO: error handling...
+            assert(0); // TODO: error handling...
             break;
         }
+        break;
+
+    case NODE_EXPR_BIN:
+        fprint_impl(fp, node->value.expr_bin.lhs, indent);
+        token_fprint_buf(fp, node->value.expr_bin.op);
+        fprint_impl(fp, node->value.expr_bin.rhs, indent);
         break;
 
     case NODE_LIT_INT:
@@ -63,7 +70,7 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
         break;
 
     default:
-        // TODO: error handling...
+        assert(0); // TODO: error handling...
         break;
     }
 }
