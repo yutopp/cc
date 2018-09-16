@@ -85,6 +85,7 @@ static bool extend(Vector *v, size_t ext_size) {
 
     if (v->buffer) {
         memcpy(new_buffer, v->buffer, v->elem_size * v->len);
+        free(v->buffer);
     }
 
     v->cap = new_cap;
