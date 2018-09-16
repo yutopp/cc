@@ -41,6 +41,7 @@ typedef struct {
     size_t pos_end;
 } Token;
 
+char* token_to_string(Token *tok);
 void token_fprint(FILE *fp, Token *tok);
 void token_fprint_buf(FILE *fp, Token *tok);
 

@@ -3,6 +3,15 @@
 #include <string.h>
 #include "token.h"
 
+char* token_to_string(Token *tok) {
+    size_t range_size = tok->pos_end - tok->pos_begin;
+    char* range = malloc(sizeof(char) * (range_size + 1));
+    memcpy(range, tok->buf_ref + tok->pos_begin, range_size);
+    range[range_size] = '\0';
+
+    return range;
+}
+
 void token_fprint(FILE *fp, Token *tok) {
     switch(tok->kind) {
     case TOK_KIND_SHARP:
@@ -34,12 +43,7 @@ void token_fprint(FILE *fp, Token *tok) {
 }
 
 void token_fprint_buf(FILE *fp, Token *tok) {
-    size_t range_size = tok->pos_end - tok->pos_begin;
-    char* range = malloc(sizeof(char) * (range_size + 1));
-    memcpy(range, tok->buf_ref + tok->pos_begin, range_size);
-    range[range_size] = '\0';
-
+    char const* range = token_to_string(tok);
     fprintf(fp, "%s", range);
-
-    free(range);
+    free((char*)range);
 }
