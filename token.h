@@ -4,14 +4,16 @@
 #include <stdio.h>
 
 typedef enum {
-    TOK_KIND_EOF,
+    TOK_KIND_EMPTY,
     TOK_KIND_SHARP,
     TOK_KIND_LT,
     TOK_KIND_GT,
     TOK_KIND_LPAREN,
     TOK_KIND_RPAREN,
-    TOK_KIND_LBLOCK,
-    TOK_KIND_RBLOCK,
+    TOK_KIND_LBRACKET,
+    TOK_KIND_RBRACKET,
+    TOK_KIND_LBRACE,
+    TOK_KIND_RBRACE,
     TOK_KIND_SEMICOLON,
     TOK_KIND_COLON,
     TOK_KIND_DOT,
@@ -31,6 +33,7 @@ typedef enum {
     TOK_KIND_INT_LIT,
     TOK_KIND_CHAR_LIT,
     TOK_KIND_STRING_LIT,
+    TOK_KIND_EOF,
 } TokenKind;
 
 typedef struct {

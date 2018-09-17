@@ -43,7 +43,8 @@ Token lexer_read(Lexer* lex) {
             skip(lex);
             continue;
 
-        case 'A' ... 'z':
+        case 'A' ... 'Z':
+        case 'a' ... 'z':
             skip(lex);
             return read_id(lex);
 
@@ -79,13 +80,21 @@ Token lexer_read(Lexer* lex) {
             skip(lex);
             return make_token(lex, TOK_KIND_RPAREN);
 
+        case '[':
+            skip(lex);
+            return make_token(lex, TOK_KIND_LBRACKET);
+
+        case ']':
+            skip(lex);
+            return make_token(lex, TOK_KIND_RBRACKET);
+
         case '{':
             skip(lex);
-            return make_token(lex, TOK_KIND_LBLOCK);
+            return make_token(lex, TOK_KIND_LBRACE);
 
         case '}':
             skip(lex);
-            return make_token(lex, TOK_KIND_RBLOCK);
+            return make_token(lex, TOK_KIND_RBRACE);
 
         case ';':
             skip(lex);
@@ -151,7 +160,10 @@ static Token read_id(Lexer* lex) {
     for(;;) {
         char c0 = current(lex);
 
-        if ((c0 >= 'A' && c0 <= 'z') || (c0 >= '0' && c0 <= '9')) {
+        switch(c0) {
+        case 'A' ... 'Z':
+        case 'a' ... 'z':
+        case '0' ... '9':
             skip(lex);
             continue;
         }
