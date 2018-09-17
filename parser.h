@@ -33,7 +33,7 @@ typedef struct {
 
 typedef struct parser_result_t {
     enum ParserResult result;
-    ParseError error;
+    ParseError error; // TODO: Move error into the union which is named "value"
     union {
         Node* node;
         Vector* nodes; // Vector<Node*>
