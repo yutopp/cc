@@ -9,6 +9,8 @@ void ir_inst_value_destruct(IRInstValue* v) {
         free((char*)v->value.symbol);
         break;
 
+    case IR_INST_VALUE_KIND_STRING:
+    case IR_INST_VALUE_KIND_REF:
     case IR_INST_VALUE_KIND_IMM_INT:
     case IR_INST_VALUE_KIND_OP_BIN:
         break; // DO NOTHING
@@ -84,7 +86,8 @@ IRModule* ir_module_new() {
     IRModule* m = (IRModule*)malloc(sizeof(IRModule));
     m->definitions = vector_new(sizeof(IRInst));
     m->functions = vector_new(sizeof(IRFunction));
-    m->value_sym_id = 0;
+    m->defs_sym_id = 0;
+    m->values_sym_id = 0;
 
     return m;
 }
@@ -105,16 +108,16 @@ void ir_module_drop(IRModule *m) {
     free(m);
 }
 
-static IRSymbolID insert_definition(IRModule* m, IRInstValue* v) {
-    IRSymbolID sym_id = m->value_sym_id;
-    m->value_sym_id++;
+static IRSymbolID insert_definition(IRModule* m, IRInstValue v) {
+    IRSymbolID sym_id = m->defs_sym_id;
+    m->defs_sym_id++;
 
     IRInst inst = {
         .kind = IR_INST_KIND_LET,
         .value = {
             .let = {
                 .id = sym_id,
-                .rhs = *v,
+                .rhs = v,
             },
         },
     };
@@ -125,8 +128,7 @@ static IRSymbolID insert_definition(IRModule* m, IRInstValue* v) {
 }
 
 static void build_trans_unit(IRBuilder* builder, Node* node, IRModule* m);
-static void build_top_level_definition(IRBuilder* builder, Node* node, IRModule* m);
-static void build_top_level_function(IRBuilder* builder, Node* node, IRModule* m);
+static void build_top_level(IRBuilder* builder, Node* node, IRModule* m);
 static void build_statement(IRBuilder* builder, Node* node, IRFunction* m);
 static IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f);
 
@@ -163,12 +165,7 @@ void build_trans_unit(IRBuilder* builder, Node* node, IRModule* m) {
 
         for(int i=0; i<vector_len(decls); ++i) {
             Node** n = (Node**)vector_at(decls, i);
-            build_top_level_definition(builder, *n, m);
-        }
-
-        for(int i=0; i<vector_len(decls); ++i) {
-            Node** n = (Node**)vector_at(decls, i);
-            build_top_level_function(builder, *n, m);
+            build_top_level(builder, *n, m);
         }
 
         break;
@@ -180,7 +177,7 @@ void build_trans_unit(IRBuilder* builder, Node* node, IRModule* m) {
     }
 }
 
-void build_top_level_definition(IRBuilder* builder, Node* node, IRModule* m) {
+void build_top_level(IRBuilder* builder, Node* node, IRModule* m) {
     switch(node->kind) {
     case NODE_FUNC_DEF:
     {
@@ -188,42 +185,22 @@ void build_top_level_definition(IRBuilder* builder, Node* node, IRModule* m) {
 
         Token* id_tok = node_declarator_extract_id_token(node->value.func_def.decl);
         assert(id_tok);
-        char const* id = token_to_string(id_tok);
 
-        IRInstValue f = {
+        IRInstValue fval = {
             .kind = IR_INST_VALUE_KIND_SYMBOL,
             .value = {
-                .symbol = id,
+                .symbol = token_to_string(id_tok),
             },
         };
-        insert_definition(m, &f);
-
-        break;
-    }
-
-    default:
-        fprintf(stderr, "Kind = %d\n", node->kind);
-        assert(0); // TODO: error handling
-    }
-}
-
-void build_top_level_function(IRBuilder* builder, Node* node, IRModule* m) {
-    switch(node->kind) {
-    case NODE_FUNC_DEF:
-    {
-        printf("LOG: function def\n");
-
-        Token* id_tok = node_declarator_extract_id_token(node->value.func_def.decl);
-        assert(id_tok);
-        char const* id = token_to_string(id_tok);
+        insert_definition(m, fval);
 
         IRFunction f;
-        ir_function_coustruct(&f, id, m);
+        ir_function_coustruct(&f, token_to_string(id_tok), m);
 
-        IRSymbolID sym_id_current = m->value_sym_id;
+        IRSymbolID sym_id_current = m->values_sym_id;
         builder->current_bb = f.entry;
         build_statement(builder, node->value.func_def.block, &f);
-        m->value_sym_id = sym_id_current; // Restore
+        m->values_sym_id = sym_id_current; // Restore
 
         IRFunction* ff = vector_append(m->functions);
         *ff = f;
@@ -294,32 +271,6 @@ void build_statement(IRBuilder* builder, Node* node, IRFunction* f) {
 
 IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
     switch(node->kind) {
-    case NODE_LIT_INT:
-    {
-        printf("LOG: lit_int\n");
-        IRSymbolID sym_id = f->mod->value_sym_id;
-        f->mod->value_sym_id++;
-
-        IRInstValue imm = {
-            .kind = IR_INST_VALUE_KIND_IMM_INT,
-            .value = {
-                .imm_int = node->value.lit_int.v,
-            },
-        };
-        IRInst inst = {
-            .kind = IR_INST_KIND_LET,
-            .value = {
-                .let = {
-                    .id = sym_id,
-                    .rhs = imm,
-                },
-            },
-        };
-        ir_bb_append_inst(builder->current_bb, &inst);
-
-        return sym_id;
-    }
-
     case NODE_EXPR_BIN:
     {
         printf("LOG: expr bin = ");
@@ -329,8 +280,8 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
         IRSymbolID lhs_sym = build_expression(builder, node->value.expr_bin.lhs, f);
         IRSymbolID rhs_sym = build_expression(builder, node->value.expr_bin.rhs, f);
 
-        IRSymbolID sym_id = f->mod->value_sym_id;
-        f->mod->value_sym_id++;
+        IRSymbolID sym_id = f->mod->values_sym_id;
+        f->mod->values_sym_id++;
 
         IRInstValue bin = {
             .kind = IR_INST_VALUE_KIND_OP_BIN,
@@ -378,8 +329,8 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
                 }
             }
 
-            IRSymbolID sym_id = f->mod->value_sym_id;
-            f->mod->value_sym_id++;
+            IRSymbolID sym_id = f->mod->values_sym_id;
+            f->mod->values_sym_id++;
 
             IRInstValue call = {
                 .kind = IR_INST_VALUE_KIND_CALL,
@@ -410,9 +361,105 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
         break;
     }
 
+    case NODE_LIT_INT:
+    {
+        printf("LOG: lit_int\n");
+        IRSymbolID sym_id = f->mod->values_sym_id;
+        f->mod->values_sym_id++;
+
+        IRInstValue imm = {
+            .kind = IR_INST_VALUE_KIND_IMM_INT,
+            .value = {
+                .imm_int = node->value.lit_int.v,
+            },
+        };
+        IRInst inst = {
+            .kind = IR_INST_KIND_LET,
+            .value = {
+                .let = {
+                    .id = sym_id,
+                    .rhs = imm,
+                },
+            },
+        };
+        ir_bb_append_inst(builder->current_bb, &inst);
+
+        return sym_id;
+    }
+
+    case NODE_LIT_STRING:
+    {
+        printf("LOG: lit_string\n");
+
+        IRInstValue sval = {
+            .kind = IR_INST_VALUE_KIND_STRING,
+            .value = {
+                .string = node->value.lit_string.v,
+            },
+        };
+        IRSymbolID str_sym_id = insert_definition(f->mod, sval);
+
+        IRSymbolID sym_id = f->mod->values_sym_id;
+        f->mod->values_sym_id++;
+
+        IRInstValue ref = {
+            .kind = IR_INST_VALUE_KIND_REF,
+            .value = {
+                .ref = {
+                    .is_global = 1,
+                    .sym = str_sym_id,
+                },
+            },
+        };
+        IRInst inst = {
+            .kind = IR_INST_KIND_LET,
+            .value = {
+                .let = {
+                    .id = sym_id,
+                    .rhs = ref,
+                },
+            },
+        };
+        ir_bb_append_inst(builder->current_bb, &inst);
+
+        return sym_id;
+    }
+
     case NODE_ID:
     {
-        return 0; // TODO: implement
+        // TODO: implement
+        IRInstValue val = {
+            .kind = IR_INST_VALUE_KIND_SYMBOL,
+            .value = {
+                .symbol = token_to_string(node->value.id.tok),
+            },
+        };
+        IRSymbolID tmp_sym_id = insert_definition(f->mod, val);
+
+        IRSymbolID sym_id = f->mod->values_sym_id;
+        f->mod->values_sym_id++;
+
+        IRInstValue ref = {
+            .kind = IR_INST_VALUE_KIND_REF,
+            .value = {
+                .ref = {
+                    .is_global = 1,
+                    .sym = tmp_sym_id,
+                },
+            },
+        };
+        IRInst inst = {
+            .kind = IR_INST_KIND_LET,
+            .value = {
+                .let = {
+                    .id = sym_id,
+                    .rhs = ref,
+                },
+            },
+        };
+        ir_bb_append_inst(builder->current_bb, &inst);
+
+        return sym_id;
     }
 
     default:
@@ -459,6 +506,21 @@ void ir_inst_fprint(FILE* fp, IRInst* inst) {
         case IR_INST_VALUE_KIND_SYMBOL:
         {
             fprintf(fp, "SYMBOL %s", inst->value.let.rhs.value.symbol);
+            break;
+        }
+
+        case IR_INST_VALUE_KIND_STRING:
+        {
+            fprintf(fp, "\"%s\"", inst->value.let.rhs.value.string);
+            break;
+        }
+
+        case IR_INST_VALUE_KIND_REF:
+        {
+            if (inst->value.let.rhs.value.ref.is_global) {
+                fprintf(fp, "g@");
+            }
+            fprintf(fp, "%ld", inst->value.let.rhs.value.ref.sym);
             break;
         }
 

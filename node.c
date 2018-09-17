@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <assert.h>
 #include "node.h"
 
@@ -14,6 +15,10 @@ void node_destruct(Node* node) {
         vector_drop(node->value.stmt_compound.stmts);
         break;
 
+    case NODE_LIT_STRING:
+        free((char*)node->value.lit_string.v);
+        break;
+
     case NODE_ARGS_LIST:
         vector_drop(node->value.args_list.args);
         break;
@@ -23,6 +28,7 @@ void node_destruct(Node* node) {
         break;
 
     default:
+        // DO NOTHING
         break;
     }
 }
@@ -121,6 +127,10 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
 
     case NODE_LIT_INT:
         fprintf(fp, "%d", node->value.lit_int.v);
+        break;
+
+    case NODE_LIT_STRING:
+        fprintf(fp, "\"%s\"", node->value.lit_string.v);
         break;
 
     case NODE_ID:

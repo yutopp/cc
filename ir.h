@@ -8,6 +8,8 @@ typedef size_t IRSymbolID;
 
 typedef enum ir_inst_value_kind_t {
     IR_INST_VALUE_KIND_SYMBOL,
+    IR_INST_VALUE_KIND_STRING,
+    IR_INST_VALUE_KIND_REF,
     IR_INST_VALUE_KIND_IMM_INT,
     IR_INST_VALUE_KIND_OP_BIN,
     IR_INST_VALUE_KIND_CALL,
@@ -38,6 +40,11 @@ struct ir_inst_value_t {
     IRInstValueKind kind;
     union {
         char const* symbol;
+        char const* string;
+        struct {
+            int is_global;
+            IRSymbolID sym;
+        } ref;
         int imm_int;
         struct {
             Token* op;
@@ -83,7 +90,8 @@ struct ir_function_t {
 struct ir_module_t {
     Vector* definitions;    // Vector<IRInst>
     Vector* functions;      // Vector<IRFunction>
-    IRSymbolID value_sym_id;
+    IRSymbolID defs_sym_id;
+    IRSymbolID values_sym_id;
 };
 
 IRModule* ir_module_new();

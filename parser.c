@@ -652,6 +652,20 @@ ParserResult parse_constant(Parser *parser) {
         return res;
     }
 
+    case TOK_KIND_STRING_LIT:
+    {
+        char* const tok_buf = token_to_string(t);
+
+        Node* node = node_arena_malloc(parser->arena);
+        node->kind = NODE_LIT_STRING;
+        node->value.lit_string.v = tok_buf;
+
+        res.result = PARSER_OK;
+        res.value.node = node;
+
+        return res;
+    }
+
     default:
         res.result = PARSER_ERROR;
         res.error.kind = PARSER_ERROR_KIND_UNEXPECTED;

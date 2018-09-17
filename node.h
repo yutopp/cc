@@ -17,6 +17,7 @@ typedef enum {
     NODE_EXPR_BIN, // TODO: Rename to NODE_EXPR_BINARY
     NODE_EXPR_POSTFIX,
     NODE_LIT_INT,
+    NODE_LIT_STRING,
     NODE_ID,
     NODE_ARGS_LIST,
     NODE_DECLARATOR,
@@ -66,6 +67,9 @@ typedef union {
     struct {
         int v;
     } lit_int;
+    struct {
+        char const* v;
+    } lit_string;
     struct {
         Token* tok;
     } id;
