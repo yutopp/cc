@@ -42,15 +42,15 @@ void arena_drop(Arena *arena) {
         return;
     }
 
-    for(int i=0; i<vector_len(arena->current); ++i) {
+    for(size_t i=0; i<vector_len(arena->current); ++i) {
         void* e = vector_at(arena->current, i);
         arena->dtor(e);
     }
     vector_drop(arena->current);
 
-    for(int i=0; i<vector_len(arena->chain); ++i) {
+    for(size_t i=0; i<vector_len(arena->chain); ++i) {
         Vector** c = (Vector**)vector_at(arena->chain, i);
-        for(int j=0; j<vector_len(*c); ++j) {
+        for(size_t j=0; j<vector_len(*c); ++j) {
             void* e = vector_at(*c, j);
             arena->dtor(e);
         }

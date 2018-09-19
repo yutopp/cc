@@ -140,7 +140,7 @@ ASM_X86_64* asm_x86_64_new(IRModule* m) {
 }
 
 void asm_x86_64_drop(ASM_X86_64 *a) {
-    for(int i=0; i<vector_len(a->insts); ++i) {
+    for(size_t i=0; i<vector_len(a->insts); ++i) {
         ASM_X86_64_Inst* inst = vector_at(a->insts, i);
         asm_x86_64_inst_destruct(inst);
     }
@@ -192,7 +192,7 @@ void asm_x86_64_fprint(FILE* fp, ASM_X86_64* a) {
 	fprintf(fp, ".file	\"simple_00.c\"\n"); // TODO
 	fprintf(fp, ".text\n");                  // TODO
 
-    for(int i=0; i<vector_len(a->insts); ++i) {
+    for(size_t i=0; i<vector_len(a->insts); ++i) {
         ASM_X86_64_Inst* inst = vector_at(a->insts, i);
         switch(inst->kind) {
         case ASM_X86_64_INST_KIND_SECTION:
@@ -353,12 +353,12 @@ void fprint_reg(FILE* fp, ASM_X86_64_Reg reg) {
 }
 
 void built_from_ir(ASM_X86_64 *a, IRModule* m) {
-    for(int i=0; i<vector_len(m->definitions); ++i) {
+    for(size_t i=0; i<vector_len(m->definitions); ++i) {
         IRInst* inst = vector_at(m->definitions, i);
         built_from_ir_global_inst(a, inst);
     }
 
-    for(int i=0; i<vector_len(m->functions); ++i) {
+    for(size_t i=0; i<vector_len(m->functions); ++i) {
         IRFunction* f = vector_at(m->functions, i);
         built_from_ir_function(a, f);
     }
@@ -422,7 +422,7 @@ void built_from_ir_function(ASM_X86_64 *a, IRFunction* f) {
 }
 
 void built_from_ir_bb(ASM_X86_64 *a, IRBB* bb) {
-    for(int i=0; i<vector_len(bb->insts); ++i) {
+    for(size_t i=0; i<vector_len(bb->insts); ++i) {
         IRInst* inst = vector_at(bb->insts, i);
         built_from_ir_inst(a, inst);
     }
@@ -509,7 +509,7 @@ void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst) {
             fprintf(stdout, "\n");
 
             // TODO: support register passing
-            for(int i=0; i<vector_len(let_rhs->value.call.args); ++i) {
+            for(size_t i=0; i<vector_len(let_rhs->value.call.args); ++i) {
                 IRSymbolID* arg = vector_at(let_rhs->value.call.args, i);
                 ASM_X86_64_Value* arg_val = asm_x86_64_get_val(a, *arg, 0);
 

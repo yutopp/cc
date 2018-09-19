@@ -25,7 +25,7 @@ void env_construct(Env* env, Token* name, Env* parent) {
 }
 
 void env_destruct(Env* env) {
-    for(int i=0; i<vector_len(env->children); ++i) {
+    for(size_t i=0; i<vector_len(env->children); ++i) {
         Env* e = vector_at(env->children, i);
         env_destruct(e);
     }
@@ -88,7 +88,7 @@ void analyze(Analyzer* a, Node* node, Env* env) {
         printf("LOG: transition unit\n");
 
         Vector* decls = node->value.trans_unit.decls;
-        for(int i=0; i<vector_len(decls); ++i) {
+        for(size_t i=0; i<vector_len(decls); ++i) {
             Node** n = (Node**)vector_at(decls, i);
             analyze(a, *n, env);
         }
@@ -122,7 +122,7 @@ void analyze(Analyzer* a, Node* node, Env* env) {
         printf("LOG: statement compound\n");
 
         Vector* stmts = node->value.stmt_compound.stmts;
-        for(int i=0; i<vector_len(stmts); ++i) {
+        for(size_t i=0; i<vector_len(stmts); ++i) {
             Node** n = (Node**)vector_at(stmts, i);
             analyze(a, *n, env);
         }

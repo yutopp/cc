@@ -37,7 +37,7 @@ IRBB* ir_bb_new() {
 }
 
 void ir_bb_drop(IRBB* bb) {
-    for(int i=0; i<vector_len(bb->insts); ++i) {
+    for(size_t i=0; i<vector_len(bb->insts); ++i) {
         IRInst* inst = vector_at(bb->insts, i);
         ir_inst_destruct(inst);
     }
@@ -93,13 +93,13 @@ IRModule* ir_module_new() {
 }
 
 void ir_module_drop(IRModule *m) {
-    for(int i=0; i<vector_len(m->definitions); ++i) {
+    for(size_t i=0; i<vector_len(m->definitions); ++i) {
         IRInst* inst = vector_at(m->definitions, i);
         ir_inst_destruct(inst);
     }
     vector_drop(m->definitions);
 
-    for(int i=0; i<vector_len(m->functions); ++i) {
+    for(size_t i=0; i<vector_len(m->functions); ++i) {
         IRFunction* f = vector_at(m->functions, i);
         ir_function_destruct(f);
     }
@@ -163,7 +163,7 @@ void build_trans_unit(IRBuilder* builder, Node* node, IRModule* m) {
 
         Vector* decls = node->value.trans_unit.decls;
 
-        for(int i=0; i<vector_len(decls); ++i) {
+        for(size_t i=0; i<vector_len(decls); ++i) {
             Node** n = (Node**)vector_at(decls, i);
             build_top_level(builder, *n, m);
         }
@@ -221,7 +221,7 @@ void build_statement(IRBuilder* builder, Node* node, IRFunction* f) {
         printf("LOG: statement compound\n");
 
         Vector* stmts = node->value.stmt_compound.stmts;
-        for(int i=0; i<vector_len(stmts); ++i) {
+        for(size_t i=0; i<vector_len(stmts); ++i) {
             Node** n = (Node**)vector_at(stmts, i);
             build_statement(builder, *n, f);
         }
@@ -320,7 +320,7 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
             Node* args_list = node->value.expr_postfix.rhs;
             if (args_list) {
                 assert(args_list->kind == NODE_ARGS_LIST);
-                for(int i=0; i<vector_len(args_list->value.args_list.args); ++i) {
+                for(size_t i=0; i<vector_len(args_list->value.args_list.args); ++i) {
                     Node** a = (Node**)vector_at(args_list->value.args_list.args, i);
                     IRSymbolID a_sym = build_expression(builder, *a, f);
 
@@ -470,12 +470,12 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
 static void fprint_indent(FILE *fp, int indent);
 
 void ir_module_fprint(FILE* fp, IRModule* m) {
-    for(int i=0; i<vector_len(m->definitions); ++i) {
+    for(size_t i=0; i<vector_len(m->definitions); ++i) {
         IRInst* inst = vector_at(m->definitions, i);
         ir_inst_fprint(fp, inst);
     }
 
-    for(int i=0; i<vector_len(m->functions); ++i) {
+    for(size_t i=0; i<vector_len(m->functions); ++i) {
         IRFunction* f = vector_at(m->functions, i);
         ir_function_fprint(fp, f);
     }
@@ -492,7 +492,7 @@ void ir_function_fprint(FILE* fp, IRFunction* f) {
 }
 
 void ir_bb_fprint(FILE* fp, IRBB* bb) {
-    for(int i=0; i<vector_len(bb->insts); ++i) {
+    for(size_t i=0; i<vector_len(bb->insts); ++i) {
         IRInst* inst = vector_at(bb->insts, i);
         fprint_indent(fp, 2); ir_inst_fprint(fp, inst);
     }
@@ -545,7 +545,7 @@ void ir_inst_fprint(FILE* fp, IRInst* inst) {
         {
             fprintf(fp, "call %%%ld", inst->value.let.rhs.value.call.lhs);
             Vector* args = inst->value.let.rhs.value.call.args;
-            for(int i=0; i<vector_len(args); ++i) {
+            for(size_t i=0; i<vector_len(args); ++i) {
                 IRSymbolID* sym = (IRSymbolID*)vector_at(args, i);
                 fprintf(fp, " %%%ld", *sym);
             }

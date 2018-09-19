@@ -55,7 +55,7 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
     case NODE_TRANS_UNIT:
     {
         Vector* decls = node->value.trans_unit.decls;
-        for(int i=0; i<vector_len(decls); ++i) {
+        for(size_t i=0; i<vector_len(decls); ++i) {
             Node** n = (Node**)vector_at(decls, i);
             fprint_impl(fp, *n, indent);
         }
@@ -74,7 +74,7 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
     {
         fprint_indent(fp, indent); fprintf(fp, "{\n");
         Vector* stmts = node->value.stmt_compound.stmts;
-        for(int i=0; i<vector_len(stmts); ++i) {
+        for(size_t i=0; i<vector_len(stmts); ++i) {
             Node** n = (Node**)vector_at(stmts, i);
             fprint_impl(fp, *n, indent + 1);
         }
@@ -140,7 +140,7 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
     case NODE_ARGS_LIST:
     {
         Vector* args = node->value.args_list.args;
-        for(int i=0; i<vector_len(args); ++i) {
+        for(size_t i=0; i<vector_len(args); ++i) {
             if (i != 0) {
                 fprintf(fp, ", ");
             }
@@ -182,7 +182,7 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
     case NODE_PARAM_LIST:
     {
         Vector* params = node->value.param_list.params;
-        for(int i=0; i<vector_len(params); ++i) {
+        for(size_t i=0; i<vector_len(params); ++i) {
             if (i != 0) {
                 fprintf(fp, ", ");
             }
