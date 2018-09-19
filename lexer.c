@@ -16,6 +16,7 @@ struct lexer_t {
     const char *buffer;
     size_t current_pos;
     size_t begin_pos;
+    const char* filepath;
 };
 
 Lexer* lexer_new(const char *buffer, const char* filepath) {
@@ -23,6 +24,7 @@ Lexer* lexer_new(const char *buffer, const char* filepath) {
     lex->buffer = buffer;
     lex->current_pos = 0;
     lex->begin_pos = -1;
+    lex->filepath = filepath;
 
     return lex;
 }
