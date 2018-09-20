@@ -4,6 +4,7 @@
 #include "asm_x86_64.h"
 #include "ir.h"
 #include "vector.h"
+#include "log.h"
 
 static void built_from_ir(ASM_X86_64 *a, IRModule* m);
 static void built_from_ir_function(ASM_X86_64 *a, IRFunction* f);
@@ -15,6 +16,7 @@ struct asm_x86_64_t {
     Vector* insts;         // Vector<ASM_X86_64_Inst>
     Vector* values;        // Vector<ASM_X86_64_Var>
     Vector* global_values; // Vector<ASM_X86_64_Var>
+    Vector* offsets;       // Vector<size_t>
     size_t label_count;
 };
 
@@ -24,6 +26,7 @@ typedef enum asm_x86_64_op_t {
     ASM_X86_64_OP_MOVQ,  // d, s
     ASM_X86_64_OP_MOVL,  // d, s
     ASM_X86_64_OP_ADDQ,  // d, s
+    ASM_X86_64_OP_SUBQ,  // d, s
     ASM_X86_64_OP_LEAQ,  // d, s
     ASM_X86_64_OP_CALL,  // v
     ASM_X86_64_OP_RET,   // (none)
@@ -31,17 +34,29 @@ typedef enum asm_x86_64_op_t {
 
 typedef enum asm_x86_64_reg_t {
     ASM_X86_64_REG_RAX,
-    ASM_X86_64_REG_RDI,
-    ASM_X86_64_REG_RBP,
+    ASM_X86_64_REG_RBX,
+    ASM_X86_64_REG_RCX,
+    ASM_X86_64_REG_RDX,
     ASM_X86_64_REG_RSP,
+    ASM_X86_64_REG_RBP,
+    ASM_X86_64_REG_RSI,
+    ASM_X86_64_REG_RDI,
     ASM_X86_64_REG_RIP,
 
     ASM_X86_64_REG_EAX,
 } ASM_X86_64_Reg;
 
+static ASM_X86_64_Reg arg_regs[4] = {
+    ASM_X86_64_REG_RDI,
+    ASM_X86_64_REG_RSI,
+    ASM_X86_64_REG_RDX,
+    ASM_X86_64_REG_RCX,
+};
+
 typedef enum asm_x86_64_value_kind_t {
     ASM_X86_64_VALUE_KIND_SYMBOL,
     ASM_X86_64_VALUE_KIND_IMM_INT,
+    ASM_X86_64_VALUE_KIND_STRING,
     ASM_X86_64_VALUE_KIND_REG,
     ASM_X86_64_VALUE_KIND_DISP_REG,
 } ASM_X86_64_ValueKind;
@@ -54,12 +69,15 @@ struct asm_x86_64_value_t {
     union {
         char const* symbol;
         int imm_int;
+        struct {
+            char const* label;
+        } string;
         ASM_X86_64_Reg reg;
         struct {
             char const* symbol;
-            int disp;
+            int disp; // 32bits
             ASM_X86_64_Reg reg;
-        } disp;
+        } disp_reg;
     } value;
 };
 
@@ -132,6 +150,7 @@ ASM_X86_64* asm_x86_64_new(IRModule* m) {
     a->insts = vector_new(sizeof(ASM_X86_64_Inst));
     a->values = vector_new(sizeof(ASM_X86_64_Var));
     a->global_values = vector_new(sizeof(ASM_X86_64_Var));
+    a->offsets = vector_new(sizeof(size_t));
     a->label_count = 0;
 
     built_from_ir(a, m);
@@ -148,6 +167,7 @@ void asm_x86_64_drop(ASM_X86_64 *a) {
 
     vector_drop(a->values);
     vector_drop(a->global_values);
+    vector_drop(a->offsets);
 
     free(a);
 }
@@ -171,7 +191,9 @@ static void asm_x86_64_set_val(ASM_X86_64 *a, IRSymbolID id, ASM_X86_64_Value va
     var->kind = ASM_X86_64_VAR_VAL;
     var->value.val = value;
 
-    fprint_value(stdout, &var->value.val);
+    fprintf(DEBUGOUT, "SET = %ld <- ", id);
+    fprint_value(DEBUGOUT, &var->value.val);
+    fprintf(DEBUGOUT, "\n");
 }
 
 static ASM_X86_64_Value* asm_x86_64_get_val(ASM_X86_64 *a, IRSymbolID id, int is_global) {
@@ -180,12 +202,33 @@ static ASM_X86_64_Value* asm_x86_64_get_val(ASM_X86_64 *a, IRSymbolID id, int is
         mem = a->global_values;
     }
 
+    fprintf(DEBUGOUT, "GET = %ld\n", id);
+    assert(id <= vector_len(mem));
     ASM_X86_64_Var* var = vector_at(mem, id);
     if (var->kind == ASM_X86_64_VAR_VAL) {
         return &var->value.val;
     }
 
     assert(0); // TODO: implement
+}
+
+static void asm_x86_64_set_local(ASM_X86_64 *a, IRSymbolID id, size_t offset) {
+    while(vector_len(a->offsets) <= id) {
+        void* e = vector_append(a->offsets);
+        assert(e);
+    }
+
+    fprintf(DEBUGOUT, "SET LOCAL = %ld <- %ld\n", id, offset);
+    size_t* o = vector_at(a->offsets, id);
+    *o = offset;
+}
+
+static size_t asm_x86_64_get_local(ASM_X86_64 *a, IRSymbolID id) {
+    fprintf(DEBUGOUT, "GET LOCAL = %ld\n", id);
+    assert(id <= vector_len(a->offsets));
+
+    size_t* o = vector_at(a->offsets, id);
+    return *o;
 }
 
 void asm_x86_64_fprint(FILE* fp, ASM_X86_64* a) {
@@ -245,6 +288,10 @@ void asm_x86_64_fprint(FILE* fp, ASM_X86_64* a) {
                 fprint_inst_op(fp, "addq", 2, &args[1], &args[0]);
                 break;
 
+            case ASM_X86_64_OP_SUBQ:
+                fprint_inst_op(fp, "subq", 2, &args[1], &args[0]);
+                break;
+
             case ASM_X86_64_OP_LEAQ:
                 fprint_inst_op(fp, "leaq", 2, &args[1], &args[0]);
                 break;
@@ -268,10 +315,10 @@ void asm_x86_64_fprint(FILE* fp, ASM_X86_64* a) {
 
 void fprint_inst_op(FILE* fp, char const* op, int num, ...) {
     va_list ap;
-    va_start(ap, num);
 
     fprintf(fp, "%s", op);
 
+    va_start(ap, num);
     for(int i=0; i<num; ++i) {
         if (i == 0) {
             fprintf(fp, "\t");
@@ -296,18 +343,22 @@ void fprint_value(FILE* fp, ASM_X86_64_Value* v) {
         fprintf(fp, "$%d", v->value.imm_int);
         break;
 
+    case ASM_X86_64_VALUE_KIND_STRING:
+        fprintf(fp, "%s(%%rip)", v->value.string.label);
+        break;
+
     case ASM_X86_64_VALUE_KIND_REG:
         fprint_reg(fp, v->value.reg);
         break;
 
     case ASM_X86_64_VALUE_KIND_DISP_REG:
-        if (v->value.disp.symbol) {
-            fprintf(fp, "%s", v->value.disp.symbol);
+        if (v->value.disp_reg.symbol) {
+            fprintf(fp, "%s", v->value.disp_reg.symbol);
         } else {
-            fprintf(fp, "%d", v->value.disp.disp);
+            fprintf(fp, "%d", v->value.disp_reg.disp);
         }
         fprintf(fp, "(");
-        fprint_reg(fp, v->value.disp.reg);
+        fprint_reg(fp, v->value.disp_reg.reg);
         fprintf(fp, ")");
         break;
 
@@ -324,16 +375,32 @@ void fprint_reg(FILE* fp, ASM_X86_64_Reg reg) {
         reg_name = "rax";
         break;
 
-    case ASM_X86_64_REG_RDI:
-        reg_name = "rdi";
+    case ASM_X86_64_REG_RBX:
+        reg_name = "rbx";
+        break;
+
+    case ASM_X86_64_REG_RCX:
+        reg_name = "rcx";
+        break;
+
+    case ASM_X86_64_REG_RDX:
+        reg_name = "rdx";
+        break;
+
+    case ASM_X86_64_REG_RSP:
+        reg_name = "rsp";
         break;
 
     case ASM_X86_64_REG_RBP:
         reg_name = "rbp";
         break;
 
-    case ASM_X86_64_REG_RSP:
-        reg_name = "rsp";
+    case ASM_X86_64_REG_RSI:
+        reg_name = "rsi";
+        break;
+
+    case ASM_X86_64_REG_RDI:
+        reg_name = "rdi";
         break;
 
     case ASM_X86_64_REG_RIP:
@@ -415,6 +482,26 @@ void built_from_ir_function(ASM_X86_64 *a, IRFunction* f) {
         inst->value.op.args[1].value.reg = ASM_X86_64_REG_RSP;
     }
 
+    size_t stack_size = 0;
+    for(size_t i=0; i<vector_len(f->locals); ++i) {
+        size_t* local = vector_at(f->locals, i);
+
+        asm_x86_64_set_local(a, i, stack_size);
+        assert(*local <= 16);
+        stack_size += *local;
+    }
+
+    if (stack_size != 0) {
+        // subq rsp, 'stack_size'
+        ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+        inst->kind = ASM_X86_64_INST_KIND_OP;
+        inst->value.op.op = ASM_X86_64_OP_SUBQ;
+        inst->value.op.args[0].kind = ASM_X86_64_VALUE_KIND_REG;
+        inst->value.op.args[0].value.reg = ASM_X86_64_REG_RSP;
+        inst->value.op.args[1].kind = ASM_X86_64_VALUE_KIND_IMM_INT;
+        inst->value.op.args[1].value.imm_int = stack_size;
+    }
+
     for(IRBB* bb = f->entry; bb != 0;) {
         built_from_ir_bb(a, bb);
         bb = bb->next;
@@ -441,6 +528,29 @@ void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst) {
                 asm_x86_64_get_val(a, let_rhs->value.ref.sym, let_rhs->value.ref.is_global);
 
             asm_x86_64_set_val(a, var_id, *ref_val, 0);
+
+            break;
+        }
+
+        case IR_INST_VALUE_KIND_ADDR_OF:
+        {
+            ASM_X86_64_Value* ref_val = asm_x86_64_get_val(a, let_rhs->value.addr_of.sym, 0);
+
+            ASM_X86_64_Value dest = {
+                .kind = ASM_X86_64_VALUE_KIND_REG,
+                .value = {
+                    .reg = ASM_X86_64_REG_RAX,
+                },
+            };
+
+            // leaq RAX, 'ref_val'
+            ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+            inst->kind = ASM_X86_64_INST_KIND_OP;
+            inst->value.op.op = ASM_X86_64_OP_LEAQ;
+            inst->value.op.args[0] = dest;
+            inst->value.op.args[1] = *ref_val;
+
+            asm_x86_64_set_val(a, var_id, dest, 0);
 
             break;
         }
@@ -488,13 +598,28 @@ void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst) {
             }
 
             // Result is saved in RAX (TODO: fix size of data)
-            ASM_X86_64_Value value = {
-                .kind = ASM_X86_64_VALUE_KIND_REG,
+            size_t var_target_offset = asm_x86_64_get_local(a, var_id);
+            ASM_X86_64_Value dest = {
+                .kind = ASM_X86_64_VALUE_KIND_DISP_REG,
                 .value = {
-                    .reg = ASM_X86_64_REG_RAX,
+                    .disp_reg = {
+                        .symbol = NULL,
+                        .disp = (int)var_target_offset, // TODO: fix
+                        .reg = ASM_X86_64_REG_RSP,
+                    },
                 },
             };
-            asm_x86_64_set_val(a, var_id, value, 0);
+            {
+                // movq 'var_target(RSP)', RAX
+                ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+                inst->kind = ASM_X86_64_INST_KIND_OP;
+                inst->value.op.op = ASM_X86_64_OP_ADDQ;
+                inst->value.op.args[0] = dest;
+                inst->value.op.args[1].kind = ASM_X86_64_VALUE_KIND_REG;
+                inst->value.op.args[1].value.reg = ASM_X86_64_REG_RAX;
+            }
+
+            asm_x86_64_set_val(a, var_id, dest, 0);
 
             break;
         }
@@ -504,21 +629,23 @@ void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst) {
             IRSymbolID lhs_id = let_rhs->value.call.lhs;
             ASM_X86_64_Value* lhs_val = asm_x86_64_get_val(a, lhs_id, 0);
 
-            fprintf(stdout, "CALL LHS %ld = ", lhs_id);
-            fprint_value(stdout, lhs_val);
-            fprintf(stdout, "\n");
+            fprintf(DEBUGOUT, "CALL LHS %ld = ", lhs_id);
+            fprint_value(DEBUGOUT, lhs_val);
+            fprintf(DEBUGOUT, "\n");
 
             // TODO: support register passing
             for(size_t i=0; i<vector_len(let_rhs->value.call.args); ++i) {
+                assert(i<sizeof(arg_regs)/sizeof(ASM_X86_64_Reg));
+
                 IRSymbolID* arg = vector_at(let_rhs->value.call.args, i);
                 ASM_X86_64_Value* arg_val = asm_x86_64_get_val(a, *arg, 0);
 
-                // leaq rdi, 'ret_val'
+                // movq ARG_REG, 'arg_val'
                 ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
                 inst->kind = ASM_X86_64_INST_KIND_OP;
-                inst->value.op.op = ASM_X86_64_OP_LEAQ;
+                inst->value.op.op = ASM_X86_64_OP_MOVQ;
                 inst->value.op.args[0].kind = ASM_X86_64_VALUE_KIND_REG;
-                inst->value.op.args[0].value.reg = ASM_X86_64_REG_RDI;
+                inst->value.op.args[0].value.reg = arg_regs[i];
                 inst->value.op.args[1] = *arg_val;
             }
 
@@ -531,13 +658,28 @@ void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst) {
             }
 
             // Result is saved in RAX (TODO: fix size of data)
-            ASM_X86_64_Value value = {
-                .kind = ASM_X86_64_VALUE_KIND_REG,
+            size_t var_target_offset = asm_x86_64_get_local(a, var_id);
+            ASM_X86_64_Value dest = {
+                .kind = ASM_X86_64_VALUE_KIND_DISP_REG,
                 .value = {
-                    .reg = ASM_X86_64_REG_RAX,
+                    .disp_reg = {
+                        .symbol = NULL,
+                        .disp = (int)var_target_offset, // TODO: fix
+                        .reg = ASM_X86_64_REG_RSP,
+                    },
                 },
             };
-            asm_x86_64_set_val(a, var_id, value, 0);
+            {
+                // movq 'var_target(RSP)', RAX
+                ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+                inst->kind = ASM_X86_64_INST_KIND_OP;
+                inst->value.op.op = ASM_X86_64_OP_MOVQ;
+                inst->value.op.args[0] = dest;
+                inst->value.op.args[1].kind = ASM_X86_64_VALUE_KIND_REG;
+                inst->value.op.args[1].value.reg = ASM_X86_64_REG_RAX;
+            }
+
+            asm_x86_64_set_val(a, var_id, dest, 0);
 
             break;
         }
@@ -563,6 +705,17 @@ void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst) {
             inst->value.op.args[0].kind = ASM_X86_64_VALUE_KIND_REG;
             inst->value.op.args[0].value.reg = ASM_X86_64_REG_RAX;
             inst->value.op.args[1] = *ret_val;
+        }
+
+        {
+            // movq rsp, rbp
+            ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+            inst->kind = ASM_X86_64_INST_KIND_OP;
+            inst->value.op.op = ASM_X86_64_OP_MOVQ;
+            inst->value.op.args[0].kind = ASM_X86_64_VALUE_KIND_REG;
+            inst->value.op.args[0].value.reg = ASM_X86_64_REG_RSP;
+            inst->value.op.args[1].kind = ASM_X86_64_VALUE_KIND_REG;
+            inst->value.op.args[1].value.reg = ASM_X86_64_REG_RBP;
         }
 
         {
@@ -603,9 +756,9 @@ void built_from_ir_global_inst(ASM_X86_64 *a, IRInst* inst) {
         };
         asm_x86_64_set_val(a, var_id, value, 1);
 
-        fprintf(stdout, "SYMBOL %ld = ", var_id);
-        fprint_value(stdout, &value);
-        fprintf(stdout, "\n");
+        fprintf(DEBUGOUT, "SYMBOL %ld = ", var_id);
+        fprint_value(DEBUGOUT, &value);
+        fprintf(DEBUGOUT, "\n");
 
         break;
     }
@@ -638,21 +791,20 @@ void built_from_ir_global_inst(ASM_X86_64 *a, IRInst* inst) {
             inst->value.string.s = let_rhs->value.string;
         }
 
-        // PIC
-        ASM_X86_64_Value disp = {
-            .kind = ASM_X86_64_VALUE_KIND_DISP_REG,
+        ASM_X86_64_Value str = {
+            .kind = ASM_X86_64_VALUE_KIND_STRING,
             .value = {
-                .disp = {
-                    .symbol = label_id,
-                    .reg = ASM_X86_64_REG_RIP
+                .string = {
+                    .label = label_id,
                 },
             },
         };
-        asm_x86_64_set_val(a, var_id, disp, 1);
 
-        fprintf(stdout, "STRING %ld = ", var_id);
-        fprint_value(stdout, &disp);
-        fprintf(stdout, "\n");
+        asm_x86_64_set_val(a, var_id, str, 1);
+
+        fprintf(DEBUGOUT, "STRING %ld = ", var_id);
+        fprint_value(DEBUGOUT, &str);
+        fprintf(DEBUGOUT, "\n");
 
         break;
     }

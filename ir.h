@@ -10,6 +10,7 @@ typedef enum ir_inst_value_kind_t {
     IR_INST_VALUE_KIND_SYMBOL,
     IR_INST_VALUE_KIND_STRING,
     IR_INST_VALUE_KIND_REF,
+    IR_INST_VALUE_KIND_ADDR_OF,
     IR_INST_VALUE_KIND_IMM_INT,
     IR_INST_VALUE_KIND_OP_BIN,
     IR_INST_VALUE_KIND_CALL,
@@ -32,6 +33,9 @@ typedef struct ir_bb_t IRBB;
 struct ir_function_t;
 typedef struct ir_function_t IRFunction;
 
+void ir_function_set_local(IRFunction* f, IRSymbolID id, size_t size);
+size_t ir_function_get_local(IRFunction* f, IRSymbolID id);
+
 struct ir_module_t;
 typedef struct ir_module_t IRModule;
 
@@ -45,6 +49,9 @@ struct ir_inst_value_t {
             int is_global;
             IRSymbolID sym;
         } ref;
+        struct {
+            IRSymbolID sym;
+        } addr_of;
         int imm_int;
         struct {
             Token* op;
@@ -84,6 +91,7 @@ struct ir_function_t {
     char const* name;
     IRModule* mod;
     IRBB* entry;
+    Vector* locals; // Vector<size_t/*size*/> TODO: Change to type info
 };
 
 // TODO: encapsulate
@@ -91,7 +99,6 @@ struct ir_module_t {
     Vector* definitions;    // Vector<IRInst>
     Vector* functions;      // Vector<IRFunction>
     IRSymbolID defs_sym_id;
-    IRSymbolID values_sym_id;
 };
 
 IRModule* ir_module_new();
