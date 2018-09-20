@@ -172,7 +172,11 @@ static Token read_id(Lexer* lex) {
 
         Token tok = make_token(lex, TOK_KIND_ID);
         char const* buf = tok.buf_ref + tok.pos_begin;
-        if (strncmp("return", buf, tok.pos_end - tok.pos_begin) == 0) {
+        if (strncmp("else", buf, tok.pos_end - tok.pos_begin) == 0) {
+            tok.kind = TOK_KIND_ELSE;
+        } else if (strncmp("if", buf, tok.pos_end - tok.pos_begin) == 0) {
+            tok.kind = TOK_KIND_IF;
+        } else if (strncmp("return", buf, tok.pos_end - tok.pos_begin) == 0) {
             tok.kind = TOK_KIND_RETURN;
         }
         return tok;

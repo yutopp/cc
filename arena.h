@@ -1,6 +1,8 @@
 #ifndef CC_ARENA_H
 #define CC_ARENA_H
 
+#include <stddef.h>
+
 struct arena_t;
 typedef struct arena_t Arena;
 

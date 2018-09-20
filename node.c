@@ -89,6 +89,18 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
         fprintf(fp, " ;\n");
         break;
 
+    case NODE_STMT_IF:
+        fprint_indent(fp, indent); fprintf(fp, "if ( ");
+        fprint_impl(fp, node->value.stmt_if.cond, 0);
+        fprintf(fp, " )\n");
+
+        fprint_impl(fp, node->value.stmt_if.then_b, indent);
+
+        if (node->value.stmt_if.else_b) {
+            fprint_impl(fp, node->value.stmt_if.else_b, indent);
+        }
+        break;
+
     case NODE_STMT_JUMP:
         switch(node->value.stmt_jump.kind) {
         case TOK_KIND_RETURN:
@@ -193,7 +205,7 @@ void fprint_impl(FILE *fp, Node* node, int indent) {
     }
 
     default:
-        fprintf(stderr, "Unknown kind: %d", node->kind);
+        fprintf(stderr, "Unknown kind: %d\n", node->kind);
         assert(0); // TODO: error handling...
         break;
     }

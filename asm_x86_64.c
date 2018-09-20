@@ -3,11 +3,14 @@
 #include <stdarg.h>
 #include "asm_x86_64.h"
 #include "ir.h"
+#include "ir_inst_defs.h"
 #include "vector.h"
+#include "map.h"
 #include "log.h"
 
 static void built_from_ir(ASM_X86_64 *a, IRModule* m);
 static void built_from_ir_function(ASM_X86_64 *a, IRFunction* f);
+static void collect_labels_from_ir_bb(ASM_X86_64 *a, IRBB* bb);
 static void built_from_ir_bb(ASM_X86_64 *a, IRBB* bb);
 static void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst);
 static void built_from_ir_global_inst(ASM_X86_64 *a, IRInst* inst);
@@ -17,7 +20,9 @@ struct asm_x86_64_t {
     Vector* values;        // Vector<ASM_X86_64_Var>
     Vector* global_values; // Vector<ASM_X86_64_Var>
     Vector* offsets;       // Vector<size_t>
-    size_t label_count;
+    size_t string_label_count;
+    size_t code_label_count;
+    UintMap* labels;
 };
 
 typedef enum asm_x86_64_op_t {
@@ -29,6 +34,9 @@ typedef enum asm_x86_64_op_t {
     ASM_X86_64_OP_SUBQ,  // d, s
     ASM_X86_64_OP_LEAQ,  // d, s
     ASM_X86_64_OP_CALL,  // v
+    ASM_X86_64_OP_CMPQ,  // d, s
+    ASM_X86_64_OP_JMP,   // v
+    ASM_X86_64_OP_JE,    // v
     ASM_X86_64_OP_RET,   // (none)
 } ASM_X86_64_Op;
 
@@ -151,7 +159,9 @@ ASM_X86_64* asm_x86_64_new(IRModule* m) {
     a->values = vector_new(sizeof(ASM_X86_64_Var));
     a->global_values = vector_new(sizeof(ASM_X86_64_Var));
     a->offsets = vector_new(sizeof(size_t));
-    a->label_count = 0;
+    a->string_label_count = 0;
+    a->code_label_count = 0;
+    a->labels = uint_map_new(sizeof(char const*), NULL);
 
     built_from_ir(a, m);
 
@@ -168,6 +178,7 @@ void asm_x86_64_drop(ASM_X86_64 *a) {
     vector_drop(a->values);
     vector_drop(a->global_values);
     vector_drop(a->offsets);
+    uint_map_drop(a->labels);
 
     free(a);
 }
@@ -298,6 +309,18 @@ void asm_x86_64_fprint(FILE* fp, ASM_X86_64* a) {
 
             case ASM_X86_64_OP_CALL:
                 fprint_inst_op(fp, "call", 1, &args[0]);
+                break;
+
+            case ASM_X86_64_OP_CMPQ:
+                fprint_inst_op(fp, "cmp", 2, &args[1], &args[0]);
+                break;
+
+            case ASM_X86_64_OP_JMP:
+                fprint_inst_op(fp, "jmp", 1, &args[0]);
+                break;
+
+            case ASM_X86_64_OP_JE:
+                fprint_inst_op(fp, "je", 1, &args[0]);
                 break;
 
             case ASM_X86_64_OP_RET:
@@ -431,6 +454,16 @@ void built_from_ir(ASM_X86_64 *a, IRModule* m) {
     }
 }
 
+static void built_from_ir_function_bb_collect_labels_iter(IRBB* bb, void* args) {
+    ASM_X86_64* a = (ASM_X86_64*)args;
+    collect_labels_from_ir_bb(a, bb);
+}
+
+static void built_from_ir_function_bb_built_iter(IRBB* bb, void* args) {
+    ASM_X86_64* a = (ASM_X86_64*)args;
+    built_from_ir_bb(a, bb);
+}
+
 void built_from_ir_function(ASM_X86_64 *a, IRFunction* f) {
     {
         // .text
@@ -502,17 +535,44 @@ void built_from_ir_function(ASM_X86_64 *a, IRFunction* f) {
         inst->value.op.args[1].value.imm_int = stack_size;
     }
 
-    for(IRBB* bb = f->entry; bb != 0;) {
-        built_from_ir_bb(a, bb);
-        bb = bb->next;
-    }
+    ir_bb_visit(f->entry, built_from_ir_function_bb_collect_labels_iter, a);
+    ir_bb_visit(f->entry, built_from_ir_function_bb_built_iter, a);
+}
+
+static char const* make_code_label(size_t index) {
+    char* label_id = (char*)malloc(sizeof(char) * 10);
+    snprintf(label_id, 10, ".L%07ld", index);
+
+    return label_id;
+}
+
+void collect_labels_from_ir_bb(ASM_X86_64 *a, IRBB* bb) {
+    char const* label_id = make_code_label(a->code_label_count);
+    char const** m = uint_map_insert(a->labels, bb->id, NULL);
+    *m = label_id;
+
+    a->code_label_count++;
 }
 
 void built_from_ir_bb(ASM_X86_64 *a, IRBB* bb) {
+    char const** m = uint_map_find(a->labels, bb->id);
+    assert(m);
+    char const* label_id = *m;
+
+    {
+        // .label 'label_id'
+        ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+        inst->kind = ASM_X86_64_INST_KIND_LABEL;
+        inst->value.label.name = label_id;
+        inst->value.label.generated = 1;
+    }
+
     for(size_t i=0; i<vector_len(bb->insts); ++i) {
         IRInst* inst = vector_at(bb->insts, i);
         built_from_ir_inst(a, inst);
     }
+    assert(bb->term);
+    built_from_ir_inst(a, bb->term);
 }
 
 void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst) {
@@ -736,6 +796,86 @@ void built_from_ir_inst(ASM_X86_64 *a, IRInst* inst) {
 
         break;
     }
+
+    case IR_INST_KIND_BRANCH:
+    {
+        ASM_X86_64_Value* cond_val = asm_x86_64_get_val(a, inst->value.branch.cond, 0);
+
+        {
+            // movq RAX, 'cond'
+            ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+            inst->kind = ASM_X86_64_INST_KIND_OP;
+            inst->value.op.op = ASM_X86_64_OP_MOVQ;
+
+            inst->value.op.args[0].kind = ASM_X86_64_VALUE_KIND_REG;
+            inst->value.op.args[0].value.reg = ASM_X86_64_REG_RAX;
+            inst->value.op.args[1] = *cond_val;
+        }
+
+        {
+            // cmpq RAX, 0
+            ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+            inst->kind = ASM_X86_64_INST_KIND_OP;
+            inst->value.op.op = ASM_X86_64_OP_CMPQ;
+            inst->value.op.args[0].kind = ASM_X86_64_VALUE_KIND_REG;
+            inst->value.op.args[0].value.reg = ASM_X86_64_REG_RAX;
+            inst->value.op.args[1].kind = ASM_X86_64_VALUE_KIND_IMM_INT;
+            inst->value.op.args[1].value.imm_int = 0;
+        }
+
+        {
+            char const** m = uint_map_find(a->labels, inst->value.branch.else_bb->id);
+            assert(m);
+            char const* label_id = *m;
+
+            // JE else_bb
+            ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+            inst->kind = ASM_X86_64_INST_KIND_OP;
+            inst->value.op.op = ASM_X86_64_OP_JE;
+            inst->value.op.args[0].kind = ASM_X86_64_VALUE_KIND_SYMBOL;
+            inst->value.op.args[0].value.symbol = label_id;
+        }
+
+        {
+            char const** m = uint_map_find(a->labels, inst->value.branch.then_bb->id);
+            assert(m);
+            char const* label_id = *m;
+
+            // JMP then_bb
+            ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+            inst->kind = ASM_X86_64_INST_KIND_OP;
+            inst->value.op.op = ASM_X86_64_OP_JMP;
+            inst->value.op.args[0].kind = ASM_X86_64_VALUE_KIND_SYMBOL;
+            inst->value.op.args[0].value.symbol = label_id;
+        }
+
+        break;
+    }
+
+    case IR_INST_KIND_JUMP:
+    {
+        char const** m = uint_map_find(a->labels, inst->value.jump.next_bb->id);
+        assert(m);
+        char const* label_id = *m;
+
+        ASM_X86_64_Value label = {
+            .kind = ASM_X86_64_VALUE_KIND_SYMBOL,
+            .value = {
+                .symbol = label_id,
+            },
+        };
+
+        // jmp 'label'
+        ASM_X86_64_Inst* inst = (ASM_X86_64_Inst*)vector_append(a->insts);
+        inst->kind = ASM_X86_64_INST_KIND_OP;
+        inst->value.op.op = ASM_X86_64_OP_JMP;
+        inst->value.op.args[0] = label;
+
+        break;
+    }
+
+    default:
+        assert(0); // TODO: error handling
     }
 }
 
@@ -766,8 +906,8 @@ void built_from_ir_global_inst(ASM_X86_64 *a, IRInst* inst) {
     case IR_INST_VALUE_KIND_STRING:
     {
         char* label_id = (char*)malloc(sizeof(char) * 10);
-        snprintf(label_id, 10, ".S%07ld", a->label_count);
-        a->label_count++;
+        snprintf(label_id, 10, ".S%07ld", a->string_label_count);
+        a->string_label_count++;
 
         {
             // .section .rodata

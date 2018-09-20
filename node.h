@@ -13,6 +13,7 @@ typedef enum {
     NODE_FUNC_DEF,
     NODE_STMT_COMPOUND,
     NODE_STMT_EXPR,
+    NODE_STMT_IF,
     NODE_STMT_JUMP,
     NODE_EXPR_BIN, // TODO: Rename to NODE_EXPR_BINARY
     NODE_EXPR_POSTFIX,
@@ -50,6 +51,11 @@ typedef union {
     struct {
         Node* expr; // Nullable
     } stmt_expr;
+    struct {
+        Node* cond;
+        Node* then_b;
+        Node* else_b; // Nullable
+    } stmt_if;
     struct {
         TokenKind kind; // TODO: Change to Token*
         Node* expr;

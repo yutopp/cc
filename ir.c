@@ -1,88 +1,39 @@
 #include <stdlib.h>
 #include <assert.h>
 #include "ir.h"
+#include "ir_inst_defs.h"
 #include "vector.h"
-
-static void ir_inst_value_destruct(IRInstValue* v) {
-    switch(v->kind) {
-    case IR_INST_VALUE_KIND_SYMBOL:
-        free((char*)v->value.symbol);
-        break;
-
-    case IR_INST_VALUE_KIND_STRING:
-    case IR_INST_VALUE_KIND_REF:
-    case IR_INST_VALUE_KIND_ADDR_OF:
-    case IR_INST_VALUE_KIND_IMM_INT:
-    case IR_INST_VALUE_KIND_OP_BIN:
-        break; // DO NOTHING
-
-    case IR_INST_VALUE_KIND_CALL:
-        vector_drop(v->value.call.args);
-        break;
-    }
-}
-
-static void ir_inst_destruct(IRInst* inst) {
-    if (inst->kind == IR_INST_KIND_LET) {
-        ir_inst_value_destruct(&inst->value.let.rhs);
-    }
-}
-
-static IRBB* ir_bb_new() {
-    IRBB* bb = (IRBB*)malloc(sizeof(IRBB));
-    bb->prev = 0;
-    bb->next = 0;
-    bb->insts = vector_new(sizeof(IRInst));
-
-    return bb;
-}
-
-static void ir_bb_drop(IRBB* bb) {
-    for(size_t i=0; i<vector_len(bb->insts); ++i) {
-        IRInst* inst = vector_at(bb->insts, i);
-        ir_inst_destruct(inst);
-    }
-    vector_drop(bb->insts);
-
-    free(bb);
-}
+#include "map.h"
+#include "log.h"
 
 static void ir_bb_append_inst(IRBB* bb, IRInst* inst) {
     IRInst* i = vector_append(bb->insts);
     *i = *inst;
 }
 
-static void ir_bb_connect(IRBB* bb, IRBB* prev, IRBB* next) {
-    assert(prev);
-
-    IRBB* prev_next = prev->next;
-    prev->next = bb;
-    bb->prev = prev;
-
-    if (next) {
-        assert(next->prev == prev_next);
-        bb->next = next;
-        next->prev = bb;
-    }
+static void ir_bb_terminate(IRBB* bb, IRInst inst) {
+    assert(bb->term == NULL);
+    // Set terminal
+    bb->term = (IRInst*)malloc(sizeof(IRInst));
+    *bb->term = inst;
 }
 
 static void ir_function_coustruct(IRFunction* f, char const* name, IRModule* m) {
     f->name = name;
     f->mod = m;
-    f->entry = ir_bb_new();
+    f->bb_arena = ir_bb_arena_new();
+    f->entry = ir_bb_arena_malloc(f->bb_arena);
+    f->bb_id = 0;
     f->locals = vector_new(sizeof(size_t));
+    f->locals_id = 0;
+
+    ir_bb_construct(f->entry, f->bb_id);
+    f->bb_id++;
 }
 
 static void ir_function_destruct(IRFunction* f) {
     free((char*)f->name);
-
-    assert(f->entry->prev == 0);
-    for(IRBB* bb = f->entry; bb != 0;) {
-        IRBB* next = bb->next;
-        ir_bb_drop(bb);
-        bb = next;
-    }
-
+    ir_bb_arena_drop(f->bb_arena);
     vector_drop(f->locals);
 }
 
@@ -151,14 +102,14 @@ static void build_statement(IRBuilder* builder, Node* node, IRFunction* m);
 static IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f);
 
 struct ir_builder_t {
+    IRFunction* current_func;
     IRBB* current_bb;
-    IRSymbolID current_local_sym_id;
 };
 
 IRBuilder* ir_builder_new() {
     IRBuilder* builder = (IRBuilder*)malloc(sizeof(IRBuilder));
+    builder->current_func = NULL;
     builder->current_bb = NULL;
-    builder->current_local_sym_id = 0;
 
     return builder;
 }
@@ -173,6 +124,39 @@ IRModule* ir_builder_new_module(IRBuilder* builder, Node* node) {
     build_trans_unit(builder, node, m);
 
     return m;
+}
+
+static IRFunction* ir_builder_build_function(IRBuilder* builder, char const* name, IRModule* m) {
+    IRFunction* f = vector_append(m->functions);
+    ir_function_coustruct(f, name, m);
+
+    return f;
+}
+
+static void ir_builder_set_current_func(IRBuilder* builder, IRFunction* f) {
+    builder->current_func = f;
+    builder->current_bb = f->entry;
+}
+
+static void ir_builder_set_current_bb(IRBuilder* builder, IRBB* bb) {
+    builder->current_bb = bb;
+}
+
+static IRBB* ir_builder_build_bb(IRBuilder* builder) {
+    IRFunction* f = builder->current_func;
+    IRBB* bb = ir_bb_arena_malloc(f->bb_arena);
+    ir_bb_construct(bb, f->bb_id);
+    f->bb_id++;
+
+    return bb;
+}
+
+static IRSymbolID ir_builder_build_local(IRBuilder* builder) {
+    IRFunction* f = builder->current_func;
+    IRSymbolID sym_id = f->locals_id;
+    f->locals_id++;
+
+    return sym_id;
 }
 
 void build_trans_unit(IRBuilder* builder, Node* node, IRModule* m) {
@@ -214,15 +198,9 @@ void build_top_level(IRBuilder* builder, Node* node, IRModule* m) {
         };
         insert_definition(m, fval);
 
-        IRFunction f;
-        ir_function_coustruct(&f, token_to_string(id_tok), m);
-
-        builder->current_bb = f.entry;
-        builder->current_local_sym_id = 0;
-        build_statement(builder, node->value.func_def.block, &f);
-
-        IRFunction* ff = vector_append(m->functions);
-        *ff = f;
+        IRFunction* f = ir_builder_build_function(builder, token_to_string(id_tok), m);
+        ir_builder_set_current_func(builder, f);
+        build_statement(builder, node->value.func_def.block, f);
 
         break;
     }
@@ -255,6 +233,67 @@ void build_statement(IRBuilder* builder, Node* node, IRFunction* f) {
         }
         break;
 
+    case NODE_STMT_IF:
+        fprintf(DEBUGOUT, "LOG: statement if\n");
+
+        IRSymbolID cond = build_expression(builder, node->value.stmt_if.cond, f);
+
+        IRBB* then_bb = ir_builder_build_bb(builder);
+        IRBB* else_bb = NULL;
+        if (node->value.stmt_if.else_b) {
+            else_bb = ir_builder_build_bb(builder);
+        }
+        IRBB* final_bb = ir_builder_build_bb(builder);
+
+        // Terminate current bb
+        IRInst inst = {
+            .kind = IR_INST_KIND_BRANCH,
+            .value = {
+                .branch = {
+                    .cond = cond,
+                    .then_bb = then_bb,
+                    .else_bb = else_bb != NULL ? else_bb : final_bb,
+                },
+            },
+        };
+        ir_bb_terminate(builder->current_bb, inst);
+
+        // then block
+        ir_builder_set_current_bb(builder, then_bb);
+        build_statement(builder, node->value.stmt_if.then_b, f);
+        if (builder->current_bb->term == NULL) {
+            IRInst then_inst = {
+                .kind = IR_INST_KIND_JUMP,
+                .value = {
+                    .jump = {
+                        .next_bb = final_bb,
+                    },
+                },
+            };
+            ir_bb_terminate(builder->current_bb, then_inst);
+        }
+
+        // then block
+        if (node->value.stmt_if.else_b) {
+            ir_builder_set_current_bb(builder, else_bb);
+            build_statement(builder, node->value.stmt_if.else_b, f);
+            if (builder->current_bb->term == NULL) {
+                IRInst else_inst = {
+                    .kind = IR_INST_KIND_JUMP,
+                    .value = {
+                        .jump = {
+                            .next_bb = final_bb,
+                        },
+                    },
+                };
+                ir_bb_terminate(builder->current_bb, else_inst);
+            }
+        }
+
+        ir_builder_set_current_bb(builder, final_bb);
+
+        break;
+
     case NODE_STMT_JUMP:
         printf("LOG: statement jump\n");
 
@@ -271,7 +310,7 @@ void build_statement(IRBuilder* builder, Node* node, IRFunction* f) {
                     },
                 },
             };
-            ir_bb_append_inst(builder->current_bb, &inst);
+            ir_bb_terminate(builder->current_bb, inst);
 
             break;
         }
@@ -299,8 +338,7 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
         IRSymbolID lhs_sym = build_expression(builder, node->value.expr_bin.lhs, f);
         IRSymbolID rhs_sym = build_expression(builder, node->value.expr_bin.rhs, f);
 
-        IRSymbolID sym_id = builder->current_local_sym_id;
-        builder->current_local_sym_id++;
+        IRSymbolID sym_id = ir_builder_build_local(builder);
 
         IRInstValue bin = {
             .kind = IR_INST_VALUE_KIND_OP_BIN,
@@ -349,8 +387,7 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
                 }
             }
 
-            IRSymbolID sym_id = builder->current_local_sym_id;
-            builder->current_local_sym_id++;
+            IRSymbolID sym_id = ir_builder_build_local(builder);
 
             IRInstValue call = {
                 .kind = IR_INST_VALUE_KIND_CALL,
@@ -385,8 +422,7 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
     case NODE_LIT_INT:
     {
         printf("LOG: lit_int\n");
-        IRSymbolID sym_id = builder->current_local_sym_id;
-        builder->current_local_sym_id++;
+        IRSymbolID sym_id = ir_builder_build_local(builder);
 
         IRInstValue imm = {
             .kind = IR_INST_VALUE_KIND_IMM_INT,
@@ -422,8 +458,7 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
         IRSymbolID str_sym_id = insert_definition(f->mod, sval);
 
         //
-        IRSymbolID ref_sym_id = builder->current_local_sym_id;
-        builder->current_local_sym_id++;
+        IRSymbolID ref_sym_id = ir_builder_build_local(builder);
 
         {
             IRInstValue ref = {
@@ -448,8 +483,7 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
             ir_function_set_local(f, ref_sym_id, 8); // TODO: fix
         }
 
-        IRSymbolID sym_id = builder->current_local_sym_id;
-        builder->current_local_sym_id++;
+        IRSymbolID sym_id = ir_builder_build_local(builder);
 
         IRInstValue addr_of = {
             .kind = IR_INST_VALUE_KIND_ADDR_OF,
@@ -485,8 +519,7 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
         };
         IRSymbolID tmp_sym_id = insert_definition(f->mod, val);
 
-        IRSymbolID sym_id = builder->current_local_sym_id;
-        builder->current_local_sym_id++;
+        IRSymbolID sym_id = ir_builder_build_local(builder);
 
         IRInstValue ref = {
             .kind = IR_INST_VALUE_KIND_REF,
@@ -531,20 +564,28 @@ void ir_module_fprint(FILE* fp, IRModule* m) {
     }
 }
 
+static void ir_function_fprint_iter(IRBB* bb, void* args) {
+    FILE* fp = (FILE*)args;
+    ir_bb_fprint(fp, bb);
+}
+
 void ir_function_fprint(FILE* fp, IRFunction* f) {
     fprint_indent(fp, 0); fprintf(fp, "%s:\n", f->name);
-
-    for(IRBB* bb = f->entry; bb != 0;) {
-        fprint_indent(fp, 1); fprintf(fp, "->\n");
-        ir_bb_fprint(fp, bb);
-        bb = bb->next;
-    }
+    ir_bb_visit(f->entry, ir_function_fprint_iter, fp);
 }
 
 void ir_bb_fprint(FILE* fp, IRBB* bb) {
+    fprint_indent(fp, 1); fprintf(fp, "%ld:\n", bb->id);
+
     for(size_t i=0; i<vector_len(bb->insts); ++i) {
         IRInst* inst = vector_at(bb->insts, i);
         fprint_indent(fp, 2); ir_inst_fprint(fp, inst);
+    }
+
+    if (bb->term != NULL) {
+        fprint_indent(fp, 2); ir_inst_fprint(fp, bb->term);
+    } else {
+        fprint_indent(fp, 2); fprintf(fp, "NOT TERMINATED\n");
     }
 }
 
@@ -617,6 +658,20 @@ void ir_inst_fprint(FILE* fp, IRInst* inst) {
     case IR_INST_KIND_RET:
         fprintf(fp, "RET %%%ld\n", inst->value.ret.id);
         break;
+
+    case IR_INST_KIND_BRANCH:
+        fprintf(fp, "BR %%%ld: ", inst->value.branch.cond);
+        fprintf(fp, "then -> %ld, ", inst->value.branch.then_bb->id);
+        fprintf(fp, "else -> %ld\n", inst->value.branch.else_bb->id);
+
+        break;
+
+    case IR_INST_KIND_JUMP:
+        fprintf(fp, "JUMP -> %ld\n", inst->value.jump.next_bb->id);
+        break;
+
+    default:
+        assert(0); // TODO: error handling
     }
 }
 

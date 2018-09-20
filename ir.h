@@ -2,33 +2,12 @@
 #define CC_IR_H
 
 #include <stdio.h>
+#include "ir_inst.h"
+#include "ir_bb.h"
+#include "ir_bb_arena.h"
 #include "node.h"
 
 typedef size_t IRSymbolID;
-
-typedef enum ir_inst_value_kind_t {
-    IR_INST_VALUE_KIND_SYMBOL,
-    IR_INST_VALUE_KIND_STRING,
-    IR_INST_VALUE_KIND_REF,
-    IR_INST_VALUE_KIND_ADDR_OF,
-    IR_INST_VALUE_KIND_IMM_INT,
-    IR_INST_VALUE_KIND_OP_BIN,
-    IR_INST_VALUE_KIND_CALL,
-} IRInstValueKind;
-
-struct ir_inst_value_t;
-typedef struct ir_inst_value_t IRInstValue;
-
-typedef enum ir_inst_kind_t {
-    IR_INST_KIND_LET,
-    IR_INST_KIND_RET,
-} IRInstKind;
-
-struct ir_inst_t;
-typedef struct ir_inst_t IRInst;
-
-struct ir_bb_t;
-typedef struct ir_bb_t IRBB;
 
 struct ir_function_t;
 typedef struct ir_function_t IRFunction;
@@ -40,58 +19,14 @@ struct ir_module_t;
 typedef struct ir_module_t IRModule;
 
 // TODO: encapsulate
-struct ir_inst_value_t {
-    IRInstValueKind kind;
-    union {
-        char const* symbol;
-        char const* string;
-        struct {
-            int is_global;
-            IRSymbolID sym;
-        } ref;
-        struct {
-            IRSymbolID sym;
-        } addr_of;
-        int imm_int;
-        struct {
-            Token* op;
-            IRSymbolID lhs;
-            IRSymbolID rhs;
-        } op_bin;
-        struct {
-            IRSymbolID lhs;
-            Vector* args; // Vector<IRSymbolID>
-        } call;
-    } value;
-};
-
-// TODO: encapsulate
-struct ir_inst_t {
-    IRInstKind kind;
-    union {
-        struct {
-            IRSymbolID id;
-            IRInstValue rhs;
-        } let;
-        struct {
-            IRSymbolID id;
-        } ret;
-    } value;
-};
-
-// TODO: encapsulate
-struct ir_bb_t {
-    IRBB* prev;
-    IRBB* next;
-    Vector* insts; // Vector<IRInst>
-};
-
-// TODO: encapsulate
 struct ir_function_t {
     char const* name;
-    IRModule* mod;
-    IRBB* entry;
-    Vector* locals; // Vector<size_t/*size*/> TODO: Change to type info
+    IRModule* mod;          // reference
+    IRBBArena* bb_arena;
+    IRBB* entry;            // reference
+    IRBBID bb_id;
+    Vector* locals;         // Vector<size_t/*type_t*/> TODO: Change to type info
+    IRSymbolID locals_id;
 };
 
 // TODO: encapsulate

@@ -54,6 +54,7 @@ void* vector_append(Vector *v) {
         }
     }
 
+    // TODO: Consider alignment
     char* p = &v->buffer[v->elem_size * v->len];
     v->len++;
 

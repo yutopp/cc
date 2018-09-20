@@ -4,6 +4,7 @@
 #include "parser.h"
 #include "vector.h"
 #include "token.h"
+#include "log.h"
 
 #define ErrRet                                  \
     rewind_state(parser, _parser_state);        \
@@ -25,6 +26,7 @@ static ParserResult parse_stmt(Parser *parser);
 static ParserResult parse_stmt_compound(Parser *parser);
 static ParserResult parse_block_item(Parser *parser);
 static ParserResult parse_stmt_expr(Parser *parser);
+static ParserResult parse_stmt_selection(Parser *parser);
 static ParserResult parse_stmt_jump(Parser *parser);
 static ParserResult parse_expr(Parser *parser);
 static ParserResult parse_expr_assign(Parser *parser);
@@ -343,6 +345,11 @@ ParserResult parse_stmt(Parser *parser) {
         goto finish;
     }
 
+    res = parse_stmt_selection(parser);
+    if (res.result == PARSER_OK) {
+        goto finish;
+    }
+
     res = parse_stmt_jump(parser);
     if (res.result == PARSER_OK) {
         goto finish;
@@ -422,6 +429,73 @@ ParserResult parse_stmt_expr(Parser *parser) {
     res.value.node = node;
 
     return res;
+}
+
+ParserResult parse_stmt_selection(Parser *parser) {
+    ParserResult res;
+    state_t _parser_state = save_state(parser);
+
+    fprintf(DEBUGOUT, "parse_stmt_selection: START!\n");
+
+    res = current_token(parser); ErrProp;
+    forward_token(parser);
+
+    Token* t = res.value.token;
+    switch (t->kind) {
+    case TOK_KIND_IF:
+        res = assume_token(parser, TOK_KIND_LPAREN); ErrProp;
+        forward_token(parser);
+
+        res = parse_expr(parser); ErrProp;
+        Node* cond_expr = res.value.node;
+
+        res = assume_token(parser, TOK_KIND_RPAREN); ErrProp;
+        forward_token(parser);
+
+        res = parse_stmt(parser); ErrProp;
+        Node* then_body = res.value.node;
+
+        Node* node = node_arena_malloc(parser->arena);
+        node->kind = NODE_STMT_IF;
+        node->value.stmt_if.cond = cond_expr;
+        node->value.stmt_if.then_b = then_body;
+        node->value.stmt_if.else_b = NULL;
+
+        _parser_state = save_state(parser);
+
+        // Next, Check else clause
+        res = assume_token(parser, TOK_KIND_ELSE);
+        if (res.result == PARSER_ERROR) {
+            goto if_passed;
+        }
+        forward_token(parser);
+
+        res = parse_stmt(parser);
+        if (res.result == PARSER_ERROR) {
+            goto if_passed;
+        }
+
+        node->value.stmt_if.else_b = res.value.node;
+
+        _parser_state = save_state(parser);
+
+    if_passed:
+        rewind_state(parser, _parser_state);
+
+        res.result = PARSER_OK;
+        res.value.node = node;
+
+        return res;
+
+    default:
+        // TODO: support switch
+        res.result = PARSER_ERROR;
+        res.error.kind = PARSER_ERROR_KIND_UNEXPECTED;
+        res.error.value.unexpected.token = t;
+
+        rewind_state(parser, _parser_state);
+        return res;
+    }
 }
 
 ParserResult parse_stmt_jump(Parser *parser) {

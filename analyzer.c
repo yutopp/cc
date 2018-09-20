@@ -135,6 +135,17 @@ void analyze(Analyzer* a, Node* node, Env* env) {
         }
         break;
 
+    case NODE_STMT_IF:
+        // TODO: Dig a scope
+        analyze_expr(a, node->value.stmt_if.cond, env);
+
+        analyze(a, node->value.stmt_if.then_b, env);
+
+        if (node->value.stmt_if.else_b) {
+            analyze(a, node->value.stmt_if.else_b, env);
+        }
+        break;
+
     case NODE_STMT_JUMP:
         printf("LOG: statement jump\n");
 
@@ -152,7 +163,7 @@ void analyze(Analyzer* a, Node* node, Env* env) {
 
     default:
         // TODO: error handling...
-        fprintf(stderr, "Unknown kind: %d", node->kind);
+        fprintf(stderr, "Unknown kind: %d\n", node->kind);
         assert(0);
         break;
     }
