@@ -4,3 +4,5 @@ cc
 a.out
 _cc_out.*
 vgcore*
+.gdb_history
+peda-*
