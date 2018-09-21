@@ -7,6 +7,8 @@
 
 typedef enum {
     ENV_KIND_TRANS,
+    ENV_KIND_FUNC,
+    ENV_KIND_BLOCK,
 } EnvKind;
 
 struct env_t;
@@ -78,10 +80,12 @@ static void analyze(Analyzer* a, Node* node, Env* env);
 static void analyze_expr(Analyzer* a, Node* node, Env* env);
 
 struct analyzer_t {
+    TypeArena* arena;
 };
 
-Analyzer* analyzer_new() {
+Analyzer* analyzer_new(TypeArena* arena) {
     Analyzer* a = (Analyzer*)malloc(sizeof(Analyzer));
+    a->arena = arena;
 
     return a;
 }
@@ -124,7 +128,7 @@ void analyze(Analyzer* a, Node* node, Env* env) {
         // TODO: Lookup a decl
 
         Env* f_env = env_new(id_tok, env);
-        f_env->kind = ENV_KIND_TRANS;
+        f_env->kind = ENV_KIND_FUNC;
 
         // fprint_impl(fp, node->value.func_def.decl_spec, 0);
         // fprint_impl(fp, node->value.func_def.decl, 0);
@@ -140,7 +144,7 @@ void analyze(Analyzer* a, Node* node, Env* env) {
         printf("LOG: statement compound\n");
 
         Env* b_env = env_new(NULL, env);
-        b_env->kind = ENV_KIND_TRANS;
+        b_env->kind = ENV_KIND_BLOCK;
 
         Vector* stmts = node->value.stmt_compound.stmts;
         for(size_t i=0; i<vector_len(stmts); ++i) {

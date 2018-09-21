@@ -78,7 +78,9 @@ int main(int argc, char *argv[]) {
     printf("= AST =\n");
     node_fprint(stdout, res.value.node);
 
-    Analyzer* analyzer = analyzer_new();
+    TypeArena* types = type_arena_new();
+
+    Analyzer* analyzer = analyzer_new(types);
     analyzer_analyze(analyzer, res.value.node);
     if (!analyzer_success(analyzer)) {
         fprintf(stderr, "ERROR: analyzer");
@@ -136,6 +138,7 @@ exit_phaseN:
 
 exit_phase2:
     analyzer_drop(analyzer);
+    type_arena_drop(types);
 
 exit_phase1:
     parser_drop(parser);
