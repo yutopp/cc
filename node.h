@@ -80,7 +80,7 @@ typedef union {
         Token* tok;
     } id;
     struct {
-        Vector* args; // Vector<Node*>
+        Vector* args; // Vector<Node*>, Nullable
     } args_list;
     struct {
         Node* node;
