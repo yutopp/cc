@@ -4,6 +4,7 @@
 #include "vector.h"
 #include "token.h"
 #include "arena.h"
+#include "type.h"
 
 struct node_t;
 typedef struct node_t Node;
@@ -102,6 +103,7 @@ typedef union {
 struct node_t {
     NodeKind kind;
     NodeValue value;
+    Type* ty;
 };
 
 void node_destruct(Node* node);

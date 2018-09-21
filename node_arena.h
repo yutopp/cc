@@ -6,7 +6,8 @@
 typedef struct arena_t NodeArena;
 
 NodeArena* node_arena_new();
-Node* node_arena_malloc(NodeArena *arena);
 void node_arena_drop(NodeArena* arena);
+
+Node* node_arena_malloc(NodeArena *arena);
 
 #endif /* CC_NODE_ARENA_H */
