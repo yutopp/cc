@@ -2,58 +2,76 @@
 #include <assert.h>
 #include <stdio.h>
 #include "analyzer.h"
+#include "map.h"
+#include "log.h"
 
 typedef enum {
     ENV_KIND_TRANS,
 } EnvKind;
 
 struct env_t;
+typedef struct env_t Env;
 
-typedef struct env_t {
-    struct env_t* parent;
-    Token* name;
+struct env_t {
+    Env* parent; // Nullable
+    Token* name_tok;
+    char const* name;
     EnvKind kind;
     union {
     } value;
-    Vector* children; // Vector<Env>
-} Env;
+    StringMap* children; // Map<char const*, Env*>
+};
 
-void env_construct(Env* env, Token* name, Env* parent) {
-    env->parent = parent;
-    env->name = name;
-    env->children = vector_new(sizeof(Env));
+Env* env_new(Token* name, Env* parent);
+void env_drop(Env* env);
+
+static void env_elem_dtor(void* env_ref) {
+    env_drop(*(Env**)env_ref);
 }
 
-void env_destruct(Env* env) {
-    for(size_t i=0; i<vector_len(env->children); ++i) {
-        Env* e = vector_at(env->children, i);
-        env_destruct(e);
-    }
-    vector_drop(env->children);
-}
-
-Env* env_new(Token* name, Env* parent) {
+Env* env_new(Token* name_tok, Env* parent) {
     Env* e = (Env*)malloc(sizeof(Env));
-    env_construct(e, name, parent);
+    e->parent = parent;
+    e->name_tok = name_tok;
+    e->name = e->name_tok ? token_to_string(e->name_tok) : NULL;
+    e->children = string_map_new(sizeof(Env*), env_elem_dtor);
 
     return e;
 }
 
 void env_drop(Env* env) {
-    env_destruct(env);
+    if (env->name) {
+        free((char*)env->name);
+    }
+    string_map_drop(env->children);
     free(env);
 }
 
 Env* env_insert(Env* env, Env* child) {
-    Env* e = vector_append(env->children);
-    *e = *child;
+    int found;
+    assert(child->name);
 
-    return e;
+    Env** e = string_map_insert(env->children, child->name, &found);
+    assert(found == 0);
+    *e = child;
+
+    return *e;
 }
 
-Env* env_lookup(Env* env, Token* name) {
-    assert(0); // TODO: implement
-    return 0;
+Env* env_lookup(Env* env, Token* name_tok) {
+    char const* name = token_to_string(name_tok);
+    Env* found_env = string_map_find(env->children, name);
+    free((char*)name);
+
+    if (found_env) {
+        return found_env;
+    }
+
+    if (env->parent == NULL) {
+        return NULL;
+    }
+
+    return env_lookup(env->parent, name_tok);
 }
 
 static void analyze(Analyzer* a, Node* node, Env* env);
@@ -73,25 +91,24 @@ void analyzer_drop(Analyzer* a) {
 }
 
 void analyzer_analyze(Analyzer* a, Node* node) {
-    Env* top = env_new(NULL, 0); // TODO: Set a name of the transition unit
-    top->kind = ENV_KIND_TRANS;
-
-    analyze(a, node, top);
-
-    env_drop(top);
+    analyze(a, node, NULL);
 }
 
 void analyze(Analyzer* a, Node* node, Env* env) {
     switch(node->kind) {
     case NODE_TRANS_UNIT:
     {
-        printf("LOG: transition unit\n");
+        printf("LOG: translation unit\n");
+        Env* t_env = env_new(NULL, env); // TODO: Set a name of the translation unit
+        t_env->kind = ENV_KIND_TRANS;
 
         Vector* decls = node->value.trans_unit.decls;
         for(size_t i=0; i<vector_len(decls); ++i) {
             Node** n = (Node**)vector_at(decls, i);
-            analyze(a, *n, env);
+            analyze(a, *n, t_env);
         }
+
+        env_drop(t_env);
         break;
     }
 
@@ -104,15 +121,16 @@ void analyze(Analyzer* a, Node* node, Env* env) {
         Token* id_tok = node_declarator_extract_id_token(node->value.func_def.decl);
         assert(id_tok); // TODO: error handling
 
-        token_fprint(stdout, id_tok);
+        // TODO: Lookup a decl
 
-        Env fenv;
-        env_construct(&fenv, id_tok, env); // TODO: function name
+        Env* f_env = env_new(id_tok, env);
+        f_env->kind = ENV_KIND_TRANS;
+
         // fprint_impl(fp, node->value.func_def.decl_spec, 0);
         // fprint_impl(fp, node->value.func_def.decl, 0);
-        analyze(a, node->value.func_def.block, env);
+        analyze(a, node->value.func_def.block, f_env);
 
-        env_insert(env, &fenv);
+        env_insert(env, f_env);
 
         break;
     }
@@ -121,11 +139,16 @@ void analyze(Analyzer* a, Node* node, Env* env) {
     {
         printf("LOG: statement compound\n");
 
+        Env* b_env = env_new(NULL, env);
+        b_env->kind = ENV_KIND_TRANS;
+
         Vector* stmts = node->value.stmt_compound.stmts;
         for(size_t i=0; i<vector_len(stmts); ++i) {
             Node** n = (Node**)vector_at(stmts, i);
-            analyze(a, *n, env);
+            analyze(a, *n, b_env);
         }
+
+        env_drop(b_env);
         break;
     }
 
@@ -185,7 +208,20 @@ void analyze_expr(Analyzer* a, Node* node, Env* env) {
 
     case NODE_EXPR_POSTFIX:
     {
-        printf("LOG: postfix = ");
+        fprintf(DEBUGOUT,"LOG: postfix = \n");
+
+        analyze_expr(a, node->value.expr_postfix.lhs, env);
+
+        switch(node->value.expr_postfix.kind) {
+        case NODE_EXPR_POSTFIX_KIND_FUNC_CALL:
+            if (node->value.expr_postfix.rhs) {
+                analyze_expr(a, node->value.expr_postfix.rhs, env);
+            }
+            break;
+
+        default:
+            assert(0); // TODO: error handling
+        }
 
         break;
     }
@@ -199,9 +235,28 @@ void analyze_expr(Analyzer* a, Node* node, Env* env) {
 
     case NODE_ID:
     {
-        printf("LOG: id =");
-        token_fprint_buf(stdout, node->value.id.tok);
-        printf("\n");
+        fprintf(DEBUGOUT, "LOG: id =");
+        token_fprint_buf(DEBUGOUT, node->value.id.tok);
+        fprintf(DEBUGOUT, "\n");
+
+        Env* found = env_lookup(env, node->value.id.tok);
+        if (found == NULL) {
+            fprintf(DEBUGOUT, "! NOT FOUND\n");
+        }
+        fprintf(DEBUGOUT, "! FOUND\n");
+
+        break;
+    }
+
+    case NODE_ARGS_LIST:
+    {
+        fprintf(DEBUGOUT, "LOG: args list\n");
+
+        Vector* args = node->value.args_list.args;
+        for(size_t i=0; i<vector_len(args); ++i) {
+            Node** n = (Node**)vector_at(args, i);
+            analyze_expr(a, *n, env);
+        }
 
         break;
     }
