@@ -223,7 +223,7 @@ base_passed:
         forward_token(parser);
 
         NodeDirectDeclaratorKind d;
-        Node* nodes[2];
+        Node* nodes[2] = {NULL, NULL};
         switch(res.value.token->kind) {
         case TOK_KIND_LPAREN:
             res = parse_parameter_type_list(parser);
@@ -358,7 +358,7 @@ ParserResult parse_stmt(Parser *parser) {
     // Not matched...
     res.result = PARSER_ERROR;
     res.error.kind = PARSER_ERROR_KIND_UNEXPECTED; // TODO: fix
-    printf("failed: parse stmt\n");
+    fprintf(DEBUGOUT, "failed: parse stmt\n");
 
 finish:
     return res;
@@ -404,18 +404,18 @@ finish:
 }
 
 ParserResult parse_stmt_expr(Parser *parser) {
-    printf("parse_stmt_expr: START!\n");
+    fprintf(DEBUGOUT, "parse_stmt_expr: START!\n");
     ParserResult res;
     state_t _parser_state = save_state(parser);
 
     Node* expr = NULL;
     res = parse_expr(parser); // Optional
     if (res.result == PARSER_OK) {
-        printf("parse_stmt_expr: EXPR OK!\n");
+        fprintf(DEBUGOUT, "parse_stmt_expr: EXPR OK!\n");
         expr = res.value.node;
     }
 
-    printf("parse_stmt_expr: EXPR!\n");
+    fprintf(DEBUGOUT, "parse_stmt_expr: EXPR!\n");
     debug_print_current_token(parser);
 
     res = assume_token(parser, TOK_KIND_SEMICOLON); ErrProp;
@@ -610,7 +610,7 @@ ParserResult parse_expr_postfix(Parser *parser) {
         forward_token(parser);
 
         NodeExprPostfixKind d;
-        Node* nodes[1];
+        Node* nodes[1] = {NULL};
         switch(res.value.token->kind) {
         case TOK_KIND_LPAREN:
             res = parse_argument_expr_list(parser); // Optional
@@ -646,7 +646,7 @@ ParserResult parse_expr_postfix(Parser *parser) {
 
         switch(d) {
         case NODE_EXPR_POSTFIX_KIND_FUNC_CALL:
-            node->value.expr_postfix.rhs = nodes[0];
+            node->value.expr_postfix.rhs = nodes[0]; // Nullable
             break;
         default:
             assert(0); // TODO: error handling...
@@ -787,6 +787,7 @@ ParserResult combinator_more1(Parser *parser, ParserResult (*f)(Parser *parser))
     return combinator_more1_sep(parser, TOK_KIND_EMPTY, f);
 }
 
+// TODO: Use sep
 ParserResult combinator_more1_sep(Parser *parser, TokenKind sep, ParserResult (*f)(Parser *parser)) {
     ParserResult res;
     state_t _parser_state = save_state(parser);
@@ -872,15 +873,15 @@ void rewind_state(Parser *parser, state_t state) {
 }
 
 void debug_print_current_token(Parser *parser) {
-    fprintf(stderr, "DEBUG_PRINT: CURRENT_TOKEN ");
+    fprintf(DEBUGOUT, "DEBUG_PRINT: CURRENT_TOKEN ");
 
     ParserResult res = current_token(parser);
     if (res.result == PARSER_ERROR) {
-        fprintf(stderr, "ERR!\n");
+        fprintf(DEBUGOUT, "ERR!\n");
         return;
     }
 
-    fprintf(stderr, "OK! -> ");
-    token_fprint_buf(stderr, res.value.token);
-    fprintf(stderr, "\n");
+    fprintf(DEBUGOUT, "OK! -> ");
+    token_fprint_buf(DEBUGOUT, res.value.token);
+    fprintf(DEBUGOUT, "\n");
 }
