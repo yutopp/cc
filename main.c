@@ -9,7 +9,7 @@
 #include "vector.h"
 #include "cc.h"
 
-char* read_all(FILE* fp) {
+static char* read_all(FILE* fp) {
     fseek(fp, 0, SEEK_END);
     size_t size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
