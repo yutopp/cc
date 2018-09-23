@@ -10,6 +10,25 @@ This compiler has 5 phases to generate an assembly.
 - IR generating
 - ASM generating
 
+## How to build
+
+``` shell
+> make
+```
+
+## How to use
+
+``` shell
+> ./cc examples/simple_00.c
+```
+
+Currently, a name of the generated executable is fixed to `a.out`.
+
+```
+> ./a.out
+Hello world
+```
+
 # Author
 
 @yutopp
