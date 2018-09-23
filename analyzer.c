@@ -77,7 +77,7 @@ Env* env_lookup(Env* env, Token* name_tok) {
 }
 
 static void analyze(Analyzer* a, Node* node, Env* env);
-static void analyze_expr(Analyzer* a, Node* node, Env* env);
+static Type* analyze_expr(Analyzer* a, Node* node, Env* env);
 
 struct analyzer_t {
     TypeArena* arena;
@@ -196,7 +196,8 @@ void analyze(Analyzer* a, Node* node, Env* env) {
     }
 }
 
-void analyze_expr(Analyzer* a, Node* node, Env* env) {
+// Returns NULL, if failed to type check
+Type* analyze_expr(Analyzer* a, Node* node, Env* env) {
     switch(node->kind) {
     case NODE_EXPR_BIN:
     {
@@ -234,7 +235,28 @@ void analyze_expr(Analyzer* a, Node* node, Env* env) {
     {
         printf("LOG: lit int = %d\n", node->value.lit_int.v);
 
-        break;
+        Type* ty = type_arena_malloc(a->arena);
+        ty->kind = TYPE_KIND_INT;
+        ty->value.int_.bits = -1;
+
+        return ty;
+    }
+
+    case NODE_LIT_STRING:
+    {
+        printf("LOG: lit string = %d\n", node->value.lit_string.v);
+
+        Type* ty_inner = type_arena_malloc(a->arena);
+        ty_inner->kind = TYPE_KIND_INT;
+        ty_inner->value.int_.bits = 8;
+
+        Type* ty = type_arena_malloc(a->arena);
+        ty->kind = TYPE_KIND_PTR;
+        ty->value.ptr.inner = ty_inner;
+
+        node->ty = ty;
+
+        return ty;
     }
 
     case NODE_ID:
@@ -246,10 +268,11 @@ void analyze_expr(Analyzer* a, Node* node, Env* env) {
         Env* found = env_lookup(env, node->value.id.tok);
         if (found == NULL) {
             fprintf(DEBUGOUT, "! NOT FOUND\n");
+            return NULL;
         }
         fprintf(DEBUGOUT, "! FOUND\n");
 
-        break;
+        return NULL; // TODO: fix
     }
 
     case NODE_ARGS_LIST:
@@ -259,10 +282,10 @@ void analyze_expr(Analyzer* a, Node* node, Env* env) {
         Vector* args = node->value.args_list.args;
         for(size_t i=0; i<vector_len(args); ++i) {
             Node** n = (Node**)vector_at(args, i);
-            analyze_expr(a, *n, env);
+            analyze_expr(a, *n, env); // TODO: error handling
         }
 
-        break;
+        return NULL; // TODO: fix
     }
 
     default:
