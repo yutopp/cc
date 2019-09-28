@@ -367,7 +367,7 @@ IRSymbolID build_expression(IRBuilder* builder, Node* node, IRFunction* f) {
 
     case NODE_EXPR_POSTFIX:
     {
-        printf("LOG: expr post = ");
+        printf("LOG: expr post = \n");
 
         IRSymbolID lhs_sym = build_expression(builder, node->value.expr_postfix.lhs, f);
 
